@@ -38,7 +38,7 @@ echo "START TIME: $(date)"
 
 # Refresh Weka on cache
 echo "Refreshing Weka filesystem..."
-find -L /fsx/aymeric/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
+# find -L /fsx/aymeric/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
 
 # Default values
 MODEL=""
@@ -88,6 +88,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+export HF_DATASETS_CACHE="/fsx/aymeric/.cache/datasets"
+export TRANSFORMERS_CACHE="/fsx/aymeric/.cache/transformers"
+HF_DATASETS_CACHE="/fsx/aymeric/.cache/datasets"
+TRANSFORMERS_CACHE="/fsx/aymeric/.cache/transformers"
 
 # Validate required arguments
 if [[ -z "$MODEL" || -z "$TASK" || -z "$CONFIG_SUFFIX" || -z "$ACCELERATOR" ]]; then
