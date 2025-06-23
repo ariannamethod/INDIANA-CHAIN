@@ -36,9 +36,9 @@ conda activate /fsx/aymeric/venv
 START_TIME=$(date +%s)
 echo "START TIME: $(date)"
 
-# Refresh Weka on h4 cache
+# Refresh Weka on cache
 echo "Refreshing Weka filesystem..."
-find -L /fsx/h4/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
+find -L /fsx/aymeric/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
 
 # Default values
 MODEL=""
@@ -48,6 +48,7 @@ ACCELERATOR=""
 DP=1
 TP=1
 OPTIONAL_ARGS=""
+
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
