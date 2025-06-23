@@ -31,7 +31,8 @@ module load cuda/12.4
 set -x -e
 
 source ~/.bashrc
-source openr1/bin/activate
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate /fsx/aymeric/venv
 START_TIME=$(date +%s)
 echo "START TIME: $(date)"
 
