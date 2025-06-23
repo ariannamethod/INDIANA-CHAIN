@@ -49,44 +49,44 @@ DP=1
 TP=1
 OPTIONAL_ARGS=""
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --model)
-      MODEL="$2"
-      shift 2
-      ;;
-    --task)
-      TASK="$2"
-      shift 2
-      ;;
-    --config)
-      CONFIG_SUFFIX="$2"
-      shift 2
-      ;;
-    --accelerator)
-      ACCELERATOR="$2"
-      shift 2
-      ;;
-    --dp)
-      DP="$2"
-      shift 2
-      ;;
-    --tp)
-      TP="$2"
-      shift 2
-      ;;
-    --args)
-      OPTIONAL_ARGS="$2"
-      shift 2
-      ;;
-    *)
-      echo "Unknown option: $1"
-      echo "Use --help for usage information"
-      exit 1
-      ;;
-  esac
-done
+# # Parse command line arguments
+# while [[ $# -gt 0 ]]; do
+#   case $1 in
+#     --model)
+#       MODEL="$2"
+#       shift 2
+#       ;;
+#     --task)
+#       TASK="$2"
+#       shift 2
+#       ;;
+#     --config)
+#       CONFIG_SUFFIX="$2"
+#       shift 2
+#       ;;
+#     --accelerator)
+#       ACCELERATOR="$2"
+#       shift 2
+#       ;;
+#     --dp)
+#       DP="$2"
+#       shift 2
+#       ;;
+#     --tp)
+#       TP="$2"
+#       shift 2
+#       ;;
+#     --args)
+#       OPTIONAL_ARGS="$2"
+#       shift 2
+#       ;;
+#     *)
+#       echo "Unknown option: $1"
+#       echo "Use --help for usage information"
+#       exit 1
+#       ;;
+#   esac
+# done
 
 # Validate required arguments
 if [[ -z "$MODEL" || -z "$TASK" || -z "$CONFIG_SUFFIX" || -z "$ACCELERATOR" ]]; then
