@@ -12,56 +12,105 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List
 
-from datasets import Dataset, DatasetDict
+from tqdm import tqdm
+from datasets import Dataset
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login, snapshot_download
 from PIL import Image
+from huggingface_hub import upload_large_folder
 
 load_dotenv(override=True)
 
+api = HfApi()
+
+
+config_dict = [{
+    "json_path": "mind2web-l1.json",
+    "images_folder": "mind2web/",
+    "sampling_strategy": "all"
+}, {
+    "json_path": "mind2web-l2.json",
+    "images_folder": "mind2web/",
+    "sampling_strategy": "all"}, {
+        "json_path": "mind2web-l2.json",
+    "images_folder": "mind2web/",
+    "sampling_strategy": "all"}, {
+        "json_path": "guiact-web-single.json",
+    "images_folder": "guiact-web-single/images/",
+    "sampling_strategy": "all"}, {
+        "json_path": "guiact-web-multi-l1.json",
+    "images_folder": "guiact-web-multi/images/",
+    "sampling_strategy": "all"}, {
+        "json_path": "guiact-web-multi-l2.json",
+    "images_folder": "guiact-web-multi/images/",
+    "sampling_strategy": "all"}, {
+        "json_path": "miniwob-l1.json",
+    "images_folder": "miniwob/images",
+    "sampling_strategy": "all"}, {
+        "json_path": "miniwob-l2.json",
+    "images_folder": "miniwob/images/",
+    "sampling_strategy": "all"},
+    {
+    "json_path": "coat.json",
+    "images_folder": "coat/images/",
+    "sampling_strategy": "all"},
+    {
+        "json_path": "android_control.json",
+    "images_folder": "android_control/images/",
+    "sampling_strategy": "all"},
+    {
+        "json_path": "gui-odyssey-l1.json",
+    "images_folder": "gui-odyssey/images/",
+    "sampling_strategy": "random:33%"}, {
+        "json_path": "gui-odyssey-l2.json",
+    "images_folder": "gui-odyssey/images/",
+    "sampling_strategy": "random:33%"}, {
+        "json_path": "gui-odyssey-l2.json",
+    "images_folder": "gui-odyssey/images/",
+    "sampling_strategy": "random:33%"}, {
+        "json_path": "amex-l1.json",
+    "images_folder": "amex/images/",
+    "sampling_strategy": "random:33%"}, {
+        "json_path": "amex-l2.json",
+    "images_folder": "amex/images/",
+    "sampling_strategy": "random:33%"}, {
+        "json_path": "amex-l2.json",
+    "images_folder": "amex/images/",
+    "sampling_strategy": "random:33%"}, {
+        "json_path": "aitw-l1.json",
+    "images_folder": "aitw/images",
+    "sampling_strategy": "all"},
+    {
+        "json_path": "aitw-l2.json",
+        "images_folder": "aitw/images/",
+        "sampling_strategy": "all"
+    },
+]
+
 
 def discover_dataset_config(dataset_path: str) -> List[Dict[str, Any]]:
-    """Discover dataset configuration by scanning the data/aguvis/train directory."""
+    """Discover dataset configuration by scanning the data directory."""
     dataset_dir = Path(dataset_path)
-    train_dir = dataset_dir / "data" / "aguvis" / "train"
+    train_dir = dataset_dir
 
     if not train_dir.exists():
         raise FileNotFoundError(f"Train directory not found: {train_dir}")
 
     configs = []
+    processed_splits = set()
 
     # Find all JSON files in the train directory
-    for json_file in train_dir.glob("*.json"):
-        base_name = json_file.stem.replace("-l1", "").replace("-l2", "")
-
-        # Determine the images folder based on the base name
-        images_folder = None
-
-        # Generate potential folder names by trying common patterns
-        potential_folders = [base_name, f"{base_name}/images"]
-
-        # Find the first existing folder
-        for folder in potential_folders:
-            full_folder_path = dataset_dir / folder
-            if full_folder_path.exists():
-                images_folder = folder
-                break
-
-        if images_folder is None:
-            print(
-                f"Warning: No images folder found for {base_name}, trying default pattern"
-            )
-            images_folder = f"{base_name}/images"
-
-        config = {
-            "json_path": str(json_file.relative_to(dataset_dir)),
-            "images_folder": images_folder,
-            "sampling_strategy": "all",  # Default to all for now
-            "split_name": base_name,
-        }
-
+    for config in config_dict:
+        split_name = config["json_path"].replace(".json", "").replace("-l1", "").replace("-l2", "")
+        
+        # Skip if we already processed this split
+        if split_name in processed_splits:
+            continue
+            
+        config["split_name"] = split_name
         configs.append(config)
-        print(f"Discovered config: {base_name} -> {images_folder}")
+        processed_splits.add(split_name)
+        print(f"Discovered config: {config['split_name']} -> {config['images_folder']}")
 
     return configs
 
@@ -71,30 +120,27 @@ def download_dataset(
 ) -> str:
     """Download the dataset using snapshot_download."""
     print(f"Downloading dataset from {repo_id}...")
-    try:
-        local_path = snapshot_download(
-            repo_id=repo_id, local_dir=local_dir, repo_type="dataset"
-        )
-        print(f"Dataset downloaded to: {local_path}")
-        return local_path
-    except Exception as e:
-        print(f"Error downloading dataset: {e}")
-        print("This might be due to authentication issues or network problems.")
-        raise
+    local_path = snapshot_download(
+        repo_id=repo_id, local_dir=local_dir, repo_type="dataset"
+    )
+    print(f"Dataset downloaded to: {local_path}")
+    return local_path
 
 
 def extract_zip_files(dataset_path: str):
-    """Extract all zip files found in the dataset directory."""
+    """Extract all zip files found in the dataset directory, but only if not already extracted."""
     print("Extracting zip files...")
     dataset_dir = Path(dataset_path)
 
     for zip_file in dataset_dir.rglob("*.zip"):
-        print(f"Extracting: {zip_file}")
         extract_dir = zip_file.parent / zip_file.stem
+        if extract_dir.exists() and any(extract_dir.iterdir()):
+            print(f"Skipping extraction for {zip_file} (already extracted at {extract_dir})")
+            continue
 
+        print(f"Extracting: {zip_file}")
         with zipfile.ZipFile(zip_file, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
-
         print(f"Extracted to: {extract_dir}")
 
 
@@ -105,15 +151,9 @@ def load_images_from_folder(
     images = []
     for img_path in image_paths:
         full_path = images_folder / img_path
-        if full_path.exists():
-            try:
-                img = Image.open(full_path)
-                images.append(img.copy())
-                img.close()
-            except Exception as e:
-                print(f"Warning: Could not load image {full_path}: {e}")
-        else:
-            print(f"Warning: Image not found: {full_path}")
+        img = Image.open(full_path)
+        images.append(img.copy())
+        img.close()
     return images
 
 
@@ -139,81 +179,98 @@ def convert_to_chat_format(data_item: Dict[str, Any]) -> List[Dict[str, Any]]:
     return chat_messages
 
 
-def process_split(config: Dict[str, Any], dataset_path: str) -> Dataset:
+def process_split(config: Dict[str, Any], dataset_path: str, destination_path: str) -> Dataset:
     """Process a single dataset split."""
-    print(f"Processing split: {config['split_name']}")
+    split_name = config['split_name']
+    repo_id = "smolagents/aguvis-stage-2"
+
+    # Check if the split already exists on the HuggingFace Hub
+    repo_info = api.repo_info(repo_id, repo_type="dataset")
+    if hasattr(repo_info, "siblings"):
+        # Check if the split exists as a parquet file in the repo
+        split_exists = any(
+            (f"{split_name}-" in sibling.rfilename or f"{split_name}." in sibling.rfilename)
+            and sibling.rfilename.endswith(".parquet")
+            for sibling in repo_info.siblings
+        )
+        if split_exists:
+            print(f"Split '{split_name}' already exists in {repo_id}, skipping processing.")
+            return None
+
+    print(f"Processing split: {split_name}")
 
     dataset_dir = Path(dataset_path)
-    json_path = dataset_dir / config["json_path"]
-    images_folder = dataset_dir / config["images_folder"]
-
-    if not json_path.exists():
-        print(f"Warning: JSON file not found: {json_path}")
-        return None
+    images_folder = dataset_dir / config["split_name"] / config["images_folder"]
 
     if not images_folder.exists():
         print(f"Warning: Images folder not found: {images_folder}")
         return None
 
-    # Load JSON data
-    with open(json_path, "r") as f:
-        data = json.load(f)
+    # Find all JSON files that match this split (e.g., mind2web-l1.json, mind2web-l2.json)
+    json_files = []
+    for cfg in config_dict:
+        cfg_split = cfg["json_path"].replace(".json", "").replace("-l1", "").replace("-l2", "")
+        if cfg_split == split_name:
+            json_path = dataset_dir / cfg["json_path"]
+            if json_path.exists():
+                json_files.append(json_path)
+
+    if not json_files:
+        print(f"Warning: No JSON files found for split: {split_name}")
+        return None
+
+    # Load and merge JSON data from all matching files
+    data = []
+    for json_file in json_files:
+        print(f"Loading data from: {json_file}")
+        with open(json_file, "r") as f:
+            file_data = json.load(f)
+            data.extend(file_data)
+            print(f"  Added {len(file_data)} items")
+
+    def get_images_total_weight(images_folder: Path, image_paths: list) -> int:
+        return sum(os.path.getsize(images_folder / img_path) for img_path in image_paths)
 
     processed_data = []
+    current_weight = 0
+    shard_number = 0
+    MAX_WEIGHT = 1000 * 1024 * 1024
 
-    for item in data:
-        try:
-            # Extract image paths from the data item
-            image_paths = []
-            if "images" in item:
-                image_paths = (
-                    item["images"]
-                    if isinstance(item["images"], list)
-                    else [item["images"]]
-                )
-            elif "image" in item:
-                image_paths = [item["image"]]
+    pbar = tqdm(data)
+    for item in pbar:
+        # Extract image paths from the data item
+        image_paths = []
+        if "images" in item:
+            image_paths = (
+                item["images"]
+                if isinstance(item["images"], list)
+                else [item["images"]]
+            )
+        elif "image" in item:
+            image_paths = [item["image"]]
 
-            # Load images
-            images = load_images_from_folder(images_folder, image_paths)
+        # Estimate weight of these images
+        images_weight = get_images_total_weight(images_folder, image_paths)
 
-            # Convert to chat format
-            texts = convert_to_chat_format(item)
+        # Load images
+        images = load_images_from_folder(images_folder, image_paths)
 
-            processed_data.append({"images": images, "texts": texts})
+        texts = convert_to_chat_format(item)
 
-        except Exception as e:
-            print(f"Warning: Error processing item: {e}")
-            continue
+        entry = {"images": images, "texts": texts}
+        processed_data.append(entry)
+        current_weight += images_weight
+        pbar.set_description(f"Image weight: {int(current_weight / 1024 / 1024)} MB")
+        if current_weight >= MAX_WEIGHT:
+            dataset = Dataset.from_list(processed_data)
+            dataset.to_parquet(f"{destination_path}/shard-{shard_number}.parquet")
+            shard_number += 1
 
-    print(f"Processed {len(processed_data)} items for split {config['split_name']}")
+            processed_data = []
+            current_weight = 0
 
-    # Create dataset
     dataset = Dataset.from_list(processed_data)
-    return dataset
-
-
-def upload_dataset(
-    dataset_dict: DatasetDict, repo_id: str = "smolagents/aguvis-stage-2"
-):
-    """Upload the processed dataset to HuggingFace Hub."""
-    print(f"Uploading dataset to {repo_id}...")
-
-    # Create the repository if it doesn't exist
-    api = HfApi()
-    try:
-        api.create_repo(repo_id, repo_type="dataset", exist_ok=True)
-    except Exception as e:
-        print(f"Repository creation info: {e}")
-
-    # Push to hub
-    try:
-        dataset_dict.push_to_hub(repo_id)
-        print(f"Dataset uploaded successfully to {repo_id}")
-    except Exception as e:
-        print(f"Error uploading dataset: {e}")
-        print("This might be due to authentication issues or insufficient permissions.")
-        raise
+    dataset.to_parquet(f"{destination_path}/shard-{shard_number}.parquet")
 
 
 def authenticate_huggingface():
@@ -233,40 +290,36 @@ def main():
     # Step 0: Authenticate with HuggingFace Hub
     authenticate_huggingface()
 
-    # Step 1: Download dataset
-    dataset_path = download_dataset()
+    data_folder = Path("./aguvis_raw")
 
-    # Step 2: Extract zip files
+    dataset_path = download_dataset("xlangai/aguvis-stage2", data_folder)
+
     extract_zip_files(dataset_path)
 
-    # Step 3: Discover dataset configuration
     dataset_configs = discover_dataset_config(dataset_path)
-
-    # Step 4: Process each split
-    dataset_dict = {}
+    converted_folder = "./aguvis_converted"
 
     for config in dataset_configs:
         print(f"\n{'=' * 50}")
-        dataset = process_split(config, dataset_path)
-
-        if dataset is not None:
-            dataset_dict[config["split_name"]] = dataset
+        print(config)
+        process_split(config, dataset_path, f"{converted_folder}/{config['split_name']}")
+        
+        print(f"Processed and uploaded split: {config['split_name']}")
 
         # Force garbage collection to manage memory
         gc.collect()
 
-    # Step 5: Create DatasetDict and upload
-    if dataset_dict:
-        final_dataset = DatasetDict(dataset_dict)
-        upload_dataset(final_dataset)
-    else:
-        print("No datasets were successfully processed.")
+    print(f"Splits uploaded!")
 
     # Cleanup
     print("\nCleaning up temporary files...")
-    shutil.rmtree(dataset_path, ignore_errors=True)
+    # shutil.rmtree(dataset_path, ignore_errors=True)
 
-    print("Process completed!")
+    api.upload_large_folder(folder_path=converted_folder, repo_id="smolagents/aguvis-stage-2", repo_type="dataset")
+
+    shutil.rmtree(converted_folder, ignore_errors=True)
+
+    print("All done!")
 
 
 if __name__ == "__main__":
