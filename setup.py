@@ -21,7 +21,6 @@ from pathlib import Path
 
 from setuptools import find_packages, setup
 
-
 # Remove stale open_r1.egg-info directory to avoid https://github.com/pypa/pip/issues/5466
 stale_egg_info = Path(__file__).parent / "open_r1.egg-info"
 if stale_egg_info.exists():
@@ -44,19 +43,21 @@ _deps = [
     "accelerate==1.4.0",
     "bitsandbytes>=0.42.0",
     "datasets>=3.2.0",
-    "deepspeed==0.15.4",
+    "deepspeed==0.16.8",
     "distilabel[vllm,ray,openai]>=1.5.2",
     "e2b-code-interpreter>=1.0.5",
     "einops>=0.8.0",
     "flake8>=6.0.0",
     "hf_transfer>=0.1.4",
-    "huggingface-hub[cli]>=0.19.2,<1.0",
+    "huggingface-hub[cli,hf_xet]>=0.30.2,<1.0",
     "isort>=5.12.0",
+    "jieba",  # Needed for Chinese language support
     "langdetect",  # Needed for LightEval's extended tasks
     # "latex2sympy2_extended>=1.0.6",
-    # "liger_kernel==0.5.3",
-    "lighteval @ git+https://github.com/huggingface/lighteval.git@ed084813e0bd12d82a06d9f913291fdbee774905",
+    # "liger-kernel>=0.5.10",
+    "lighteval @ git+https://github.com/huggingface/lighteval.git@d3da6b9bbf38104c8b5e1acc86f83541f9a502d1",  # Critical bug fix for tokenizer revisions: https://github.com/huggingface/lighteval/pull/721
     "math-verify==0.5.2",  # Used for math verification in grpo
+    "morphcloud==0.1.67",
     "packaging>=23.0",
     "parameterized>=0.9.0",
     "peft>=0.14.0",
@@ -65,11 +66,13 @@ _deps = [
     "ruff>=0.9.0",
     "safetensors>=0.3.3",
     "sentencepiece>=0.1.99",
-    "torch==2.5.1",
-    "transformers==4.50.0",
-    "trl==0.16.0",
-    "vllm==0.7.2",
+    "torch==2.6.0",
+    "transformers==4.52.3",
+    "trl[vllm]==0.18.0",
     "wandb>=0.19.1",
+    "async-lru>=2.0.5",
+    "aiofiles>=24.1.0",
+    "pandas>=2.2.3",
 ]
 
 # this is a lookup table with items like:
@@ -78,7 +81,13 @@ _deps = [
 # packaging: "packaging"
 #
 # some of the values are versioned whereas others aren't.
-deps = {b: a for a, b in (re.findall(r"^(([^!=<>~ \[\]]+)(?:\[[^\]]+\])?(?:[!=<>~ ].*)?$)", x)[0] for x in _deps)}
+deps = {
+    b: a
+    for a, b in (
+        re.findall(r"^(([^!=<>~ \[\]]+)(?:\[[^\]]+\])?(?:[!=<>~ ].*)?$)", x)[0]
+        for x in _deps
+    )
+}
 
 
 def deps_list(*pkgs):
@@ -86,10 +95,12 @@ def deps_list(*pkgs):
 
 
 extras = {}
-extras["tests"] = deps_list("pytest", "parameterized", "math-verify")
+extras["tests"] = deps_list("pytest", "parameterized", "math-verify", "jieba")
 extras["torch"] = deps_list("torch")
 extras["quality"] = deps_list("ruff", "isort", "flake8")
-extras["code"] = deps_list("e2b-code-interpreter", "python-dotenv")
+extras["code"] = deps_list(
+    "e2b-code-interpreter", "python-dotenv", "morphcloud", "jieba", "pandas", "aiofiles"
+)
 extras["eval"] = deps_list("lighteval", "math-verify")
 extras["dev"] = extras["quality"] + extras["tests"] + extras["eval"] + extras["code"]
 
@@ -105,13 +116,14 @@ install_requires = [
     deps["langdetect"],
     # deps["latex2sympy2_extended"],
     deps["math-verify"],
-    # deps["liger_kernel"],
+    # deps["liger-kernel"],
     deps["packaging"],  # utilities from PyPA to e.g., compare versions
     deps["safetensors"],
     deps["sentencepiece"],
     deps["transformers"],
     deps["trl"],
     deps["wandb"],
+    deps["async-lru"],
 ]
 
 setup(

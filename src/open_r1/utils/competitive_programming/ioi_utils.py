@@ -1,6 +1,5 @@
 from collections import defaultdict
 from functools import lru_cache
-from itertools import islice
 
 from datasets import load_dataset
 
@@ -40,13 +39,3 @@ def load_ioi_tests(year: int, problem_id: str) -> dict[str, tuple[str, str]]:
     Load IOI tests for a given year and problem id.
     """
     return load_ioi_tests_for_year(year)[problem_id]
-
-
-def batched(iterable, n):
-    "Batch data into lists of length n. The last batch may be shorter."
-    # batched('ABCDEFG', 3) --> ABC DEF G
-    if n < 1:
-        return iterable
-    it = iter(iterable)
-    while batch := list(islice(it, n)):
-        yield batch

@@ -2,8 +2,9 @@ import asyncio
 from dataclasses import asdict, dataclass, field
 from typing import Union
 
-from .piston_client import PistonClient
-from .utils import batched, load_ioi_tests
+from .ioi_utils import load_ioi_tests
+from .piston_client import PistonClient, PistonError
+from .utils import batched
 
 
 @dataclass
@@ -295,4 +296,40 @@ async def run_submission(
         ),  # +3 seconds hard limit. time limits are handled by the ioi script
         "run_memory_limit": problem["memory_limit"],
     }
-    return await client.execute(data)
+    return await execute_ioi(client, data)
+
+
+async def execute_ioi(client, data) -> tuple[str, str]:
+    """
+    Requests to the IOI package return the score as a float in the stdout, as well as optional feedback/errors in stderr.
+    Returns a tuple of (score, feedback).
+    """
+    response = await client.send_execute(data)
+
+    if "message" in response:
+        raise PistonError(response["message"])
+
+    if "compile" in response and response["compile"]["code"] != 0:
+        return "0", "Compilation error exit code " + str(response["compile"]["code"]) + "\n" + response["compile"][
+            "stderr"
+        ]
+
+    if "run" not in response:
+        raise PistonError(response)
+
+    if response["run"]["code"] == 1 and "MemoryError" in response["run"]["stderr"]:
+        return "0", "Memory limit exceeded"
+
+    # successful result
+    if response["run"]["stdout"]:
+        return response["run"]["stdout"], response["run"]["stderr"]
+
+    if response["run"]["signal"] == "SIGKILL":
+        return "0", "Time limit exceeded"
+
+    # other issues
+    if response["run"]["code"] != 0:
+        raise PistonError(
+            f"language={response['language']}, version={response['version']}, exit code={response['run']['code']}, stderr={response['run']['stderr']}, signal={response['run']['signal']}"
+        )
+    return "0", "Unknown error"

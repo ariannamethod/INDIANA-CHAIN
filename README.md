@@ -21,10 +21,9 @@
 The goal of this repo is to build the missing pieces of the R1 pipeline such that everybody can reproduce and build on top of it. The project is simple by design and mostly consists of:
 
 
-- `src/open_r1`: contains the scripts to train and evaluate models as well as generate synthetic data:
+- `src/open_r1`: contains the scripts to train models as well as generate synthetic data:
     - `grpo.py`: trains a model with GRPO on a given dataset.
     - `sft.py`: performs a simple SFT of a model on a dataset.
-    - `evaluate.py`: evaluates a model on the R1 benchmarks.
     - `generate.py`: generates synthetic data from a model using [Distilabel](https://github.com/argilla-io/distilabel).
 - `Makefile`: contains easy-to-run commands for each step in the R1 pipeline leveraging the scripts above.
 
@@ -42,6 +41,7 @@ We will use the DeepSeek-R1 [tech report](https://github.com/deepseek-ai/DeepSee
 
 ## News 🗞️
 
+* **🧑‍🍳 [2025/05/26] (Step 1 completed!)** We release [**Mixture-of-Thoughts**](https://huggingface.co/datasets/open-r1/Mixture-of-Thoughts)--a curated reasoning dataset of 350k verified traces distilled from R1. The dataset spans tasks in mathematics, coding, and science, and is designed to teach language models to reason step-by-step. We also provide a recipe to train [OpenR1-Distill-7B](https://huggingface.co/open-r1/OpenR1-Distill-7B), which replicates the reasoning capabilities of [deepseek-ai/DeepSeek-R1-Distill-Qwen-7B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) and marks the completion of step 1 in the Open R1 project.
 * **⚡️ [2025/03/11] [(update #3)](https://huggingface.co/blog/open-r1/update-3):** We release the [**CodeForces-CoTs**](https://huggingface.co/datasets/open-r1/codeforces-cots) dataset of 10k competitive programming problems and 100k solutions distilled from R1. We also release IOI24: a new benchmark of _very_ hard problems from international olympiads. A 7B Qwen model trained on CodeForces-CoTs can outperform Claude 3.7 Sonnet on IOI24, while a 32B model can outperform R1 itself.
 * **∞ [2025/02/10] [(update #2)](https://huggingface.co/blog/open-r1/update-2):** We release the [**OpenR1-Math-220k**](https://huggingface.co/datasets/open-r1/OpenR1-Math-220k) dataset of 220k traces distilled from R1 on a new version of NuminaMath. Models trained on this dataset match the performance of DeepSeek's distilled ones.
 * **🔥 [2025/02/02] [(update #1)](https://huggingface.co/blog/open-r1/update-1):** We implement the first parts of the [training](https://github.com/huggingface/open-r1?tab=readme-ov-file#training-models), [inference](https://github.com/huggingface/open-r1?tab=readme-ov-file#data-generation), and [evaluation](https://github.com/huggingface/open-r1?tab=readme-ov-file#reproducing-deepseeks-evaluation-results) pipelines. Let's go!  
@@ -69,11 +69,11 @@ uv venv openr1 --python 3.11 && source openr1/bin/activate && uv pip install --u
 Next, install vLLM and FlashAttention:
 
 ```shell
-uv pip install vllm==0.7.2
+uv pip install vllm==0.8.5.post1
 uv pip install setuptools && uv pip install flash-attn --no-build-isolation
 ```
 
-This will also install PyTorch `v2.5.1` and it is **very important** to use this version since the vLLM binaries are compiled for it. You can then install the remaining dependencies for your specific use case via `pip install -e .[LIST OF MODES]`. For most contributors, we recommend:
+This will also install PyTorch `v2.6.0` and it is **very important** to use this version since the vLLM binaries are compiled for it. You can then install the remaining dependencies for your specific use case via `pip install -e .[LIST OF MODES]`. For most contributors, we recommend:
 
 ```shell
 GIT_LFS_SKIP_SMUDGE=1 uv pip install -e ".[dev]"
@@ -100,25 +100,30 @@ sudo apt-get install git-lfs
 
 ## Training models
 
-We support training models with either DDP or DeepSpeed (ZeRO-2 and ZeRO-3). For example, to run SFT on a dataset distilled from DeepSeek-R1 with reasoning traces such as [open-r1/OpenR1-Math-220k](https://huggingface.co/datasets/open-r1/OpenR1-Math-220k), run:
+> [!NOTE]
+> The training commands below are configured for a node of 8 x H100s (80GB). For different hardware and topologies, you may need to tune the batch size and number of gradient accumulation steps.
+
+We support training models with either DDP or DeepSpeed (ZeRO-2 and ZeRO-3). For example, to perform SFT on a dataset distilled from DeepSeek-R1 with reasoning traces such as [open-r1/Mixture-of-Thoughts](https://huggingface.co/datasets/open-r1/Mixture-of-Thoughts), run:
 
 ```shell
 # Train via command line
 accelerate launch --config_file=recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
-    --model_name_or_path Qwen/Qwen2.5-1.5B-Instruct \
-    --dataset_name open-r1/OpenR1-Math-220k \
-    --learning_rate 1.0e-5 \
-    --num_train_epochs 1 \
-    --packing \
-    --max_seq_length 16384 \
-    --per_device_train_batch_size 16 \
+    --model_name_or_path open-r1/Qwen2.5-Math-7B-RoPE-300k \
+    --dataset_name open-r1/Mixture-of-Thoughts \
+    --dataset_config all \
+    --eos_token '<|im_end|>' \
+    --learning_rate 4.0e-5 \
+    --num_train_epochs 5 \
+    --max_seq_length 32768 \
+    --per_device_train_batch_size 2 \
     --gradient_checkpointing \
     --bf16 \
-    --output_dir data/Qwen2.5-1.5B-Open-R1-Distill
+    --use_liger_kernel \
+    --output_dir data/OpenR1-Distill-7B
 
 # Train via YAML config
 accelerate launch --config_file recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
-    --config recipes/Qwen2.5-1.5B-Instruct/sft/config_demo.yaml
+    --config recipes/OpenR1-Distill-7B/sft/config_distill.yaml
 ```
 
 Currently, the following tasks are supported:
@@ -132,79 +137,160 @@ Currently, the following tasks are supported:
 By default, these scripts will push each model to your Hugging Face Hub username, i.e. `{username}/{model_name}-{task}`. You can override the parameters in each YAML config by appending them to the command as follows: 
 
 ```shell
-# Change batch size, number of epochs etc
+# Change the base model to a smaller variant
 accelerate launch --config_file recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
-    --config recipes/Qwen2.5-1.5B-Instruct/sft/config_demo.yaml
-    --per_device_train_batch_size=1 --num_train_epochs=5
+    --config recipes/OpenR1-Distill-7B/sft/config_distill.yaml \
+    --model_name_or_path Qwen/Qwen3-0.6B-Base \
+    --hub_model_id OpenR1-Distill-0.6B \
+    --output_dir data/OpenR1-Distill-0.6B
 ```
 
 If you also wish to override the Weights and Biases default settings, you can do so as follows:
 
 ```shell
 accelerate launch --config_file recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
-    --config recipes/Qwen2.5-1.5B-Instruct/sft/config_demo.yaml
+    --config recipes/OpenR1-Distill-7B/sft/config_distill.yaml
     --wandb_entity huggingface --wandb_project open-r1 --run_name Qwen2.5-1.5B-GRPO
 ```
 
-> [!NOTE]
-> The training commands below are configured for a node of 8 x H100s (80GB). For different hardware and topologies, you may need to tune the batch size and number of gradient accumulation steps.
+**🚨 WARNING 🚨**
 
-### SFT
+Most base models like `meta-llama/Llama-3.2-1B` do not have a chat template, so we set ChatML as the default during training. However, for Qwen base models like `Qwen/Qwen2.5-1.5B`, a chat template is pre-defined in the tokenizer, so the EOS token must be set accordingly, e.g.
 
-To run SFT on a dataset distilled from DeepSeek-R1 with reasoning traces such as [open-r1/OpenR1-Math-220k](https://huggingface.co/datasets/open-r1/OpenR1-Math-220k), run:
+```diff
+# Align EOS token with chat template for Qwen base models
+accelerate launch --config_file=recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
+    --model_name_or_path Qwen/Qwen2.5-1.5B \
++   --eos_token '<|im_end|>'
+    --dataset_name open-r1/Mixture-of-Thoughts \
+    --dataset_config all \
+    --learning_rate 4.0e-5 \
+    --num_train_epochs 1 \
+    --max_seq_length 32768 \
+    --per_device_train_batch_size 16 \
+    --gradient_checkpointing \
+    --bf16 \
+    --use_liger_kernel \
+    --output_dir data/Qwen2.5-1.5B-Open-R1-Distill
+```
+
+If you wish to use a custom chat template (e.g. Llama or Gemma), then the chat template and associated EOS token must be provided:
+
+```diff
+# Align EOS token with custom chat template
+accelerate launch --config_file=recipes/accelerate_configs/zero3.yaml src/open_r1/sft.py \
+    --model_name_or_path meta-llama/Llama-3.2-1B \
++   --chat_template "$(cat llama_chat_template.jinja)" \
++   --eos_token '<|eot_id|>' \
+    --dataset_name open-r1/Mixture-of-Thoughts \
+    --dataset_config all \
+    --learning_rate 4.0e-5 \
+    --num_train_epochs 1 \
+    --max_seq_length 32768 \
+    --per_device_train_batch_size 16 \
+    --gradient_checkpointing \
+    --bf16 \
+    --use_liger_kernel \
+    --output_dir data/Llama-3.2-1B-Open-R1-Distill
+```
+
+### SFT distillation
+
+We provide a recipe to reproduce the reasoning capabilities of [deepseek-ai/DeepSeek-R1-Distill-Qwen-7B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B), starting from the same base model. To do so, run:
 
 ```shell
 ACCELERATE_LOG_LEVEL=info accelerate launch --config_file recipes/accelerate_configs/zero3.yaml \
     src/open_r1/sft.py \
-    --config recipes/Qwen2.5-1.5B-Instruct/sft/config_demo.yaml
+    --config recipes/OpenR1-Distill-7B/sft/config_distill.yaml
 ```
+
+The result will be a model like [open-r1/OpenR1-Distill-7B](https://huggingface.co/open-r1/OpenR1-Distill-7B), with the following downstream performance:
+
+| Model                       | AIME 2024 | MATH-500 | GPQA Diamond | LiveCodeBench v5 |
+|-----------------------------|-----------|----------|--------------|------------------|
+| OpenR1-Distill-7B           | 52.7      | 89.0     | 52.8         | 39.4             |
+| DeepSeek-R1-Distill-Qwen-7B | 51.3      | 93.5     | 52.4         | 37.4             |
+
+You can adjust the YAML config to train on a different base model or dataset.
 
 ### GRPO
 
-We use TRL's [vLLM backend](https://huggingface.co/docs/trl/speeding_up_training?vllm+examples=GRPO#vllm-for-fast-generation-in-online-methods) to scale training to large models across multiple nodes. For single-node training of smol models across 8 GPUs, first spin up the vLLM server to run on e.g. 1 GPU as follows:
+We use TRL's [vLLM backend](https://huggingface.co/docs/trl/speeding_up_training?vllm+examples=GRPO#vllm-for-fast-generation-in-online-methods) to scale training to large models across multiple nodes. For single-node training of smol models across 8 GPUs, use `vllm_mode="colocate"` to run vLLM in the same process as the training script:
 
 ```shell
-CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
-```
-
-Once the server is up, run training on the remaining GPUs as follows:
-
-```shell
-CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 ACCELERATE_LOG_LEVEL=info \
-    accelerate launch --config_file recipes/accelerate_configs/zero2.yaml --num_processes 7 \
-    src/open_r1/grpo.py --config recipes/DeepSeek-R1-Distill-Qwen-1.5B/grpo/config_demo.yaml
+ACCELERATE_LOG_LEVEL=info \
+    accelerate launch --config_file recipes/accelerate_configs/zero3.yaml \
+    src/open_r1/grpo.py --config recipes/DeepSeek-R1-Distill-Qwen-1.5B/grpo/config_demo.yaml \
+    --vllm_mode colocate
 ```
 
 > [!WARNING]
 > The chat template used in the distilled DeepSeek models omits the contents of the reasoning block within the `<think>` and `</think>` tags. It also prefills the assistant response with `<think>` which interferes with the format reward function. To handle that, it is important to override the chat template as done in e.g.  [recipes/DeepSeek-R1-Distill-Qwen-1.5B/grpo/config_demo.yaml](./recipes/DeepSeek-R1-Distill-Qwen-1.5B/grpo/config_demo.yaml).
 
-For multi-node training, we provide an example Slurm script:
+For multi-node training on N+1 nodes, with 1 node running the vLLM server and N nodes running training, we provide an example Slurm script. For example, to run the above example on 1+1 nodes with data parallelism, run:
 
 ```shell
-sbatch --nodes=2 slurm/train.slurm Qwen2.5-Math-7B grpo config_simple_rl zero3 
+sbatch --nodes=2 slurm/train.slurm --model Qwen2.5-1.5B-Instruct --task grpo --config demo --accelerator zero2 --dp 8 --tp 1
 ```
 
-You will need to adapt the `slurm/train.slurm` script to match your cluster.
+See the [Launching jobs on a Slurm cluster](#launching-jobs-on-a-slurm-cluster) section for more details.
+
+#### GRPO dataset filtering
+
+We provide support to filter datasets by generating and computing pass rate on veriable tasks, see this [README](scripts/pass_rate_filtering/README.md)
 
 #### 👨‍💻 Training with a code interpreter
 
-We provide a `code` reward function for executing code generated by the policy during training. Currently, this reward function targets code contests like [Codeforces](https://codeforces.com), where solutions are executed against a set of test cases and the overall success rate is returned as the final reward. To ensure safe execution, we use [E2B](https://e2b.dev) sandboxes, which are fast and cheap to run. To use this reward function, first install the necessary dependencies:
+We provide a `code` reward function for executing code generated by the policy during training. Currently, this reward function targets code contests like [Codeforces](https://codeforces.com), where solutions are executed against a set of test cases and the overall success rate is returned as the final reward. To ensure safe execution, we support multiple sandbox providers:
+
+1. [E2B](https://e2b.dev) - Fast, cloud-based sandboxes with focus on Python execution
+2. [Morph](https://cloud.morph.so/web/) - Cloud-based sandboxes with broader language support - Python/JS/C++/Rust
+
+To use the code reward function, first install the necessary dependencies:
 
 ```shell
 uv pip install -e '.[code]'
 ```
 
-Then create a `.env` file and place an API token from E2B within it:
+##### E2B Provider
+
+To use E2B sandboxes, create a `.env` file and add your E2B API token:
 
 ```
 E2B_API_KEY="e2b_xxx"
 ```
 
-Then make sure your dataset contains a `verification_info` column with the following schema (adopted from PrimeIntellect's excellent [datasets](https://huggingface.co/collections/PrimeIntellect/synthetic-1-67a2c399cfdd6c9f7fae0c37) of verifiable problems):
+##### Morph Provider
+
+To use Morph, first install the morphcloud package:
+
+```shell
+pip install morphcloud
+```
+
+Then add your Morph API token to the `.env` file:
+
+```
+MORPH_API_KEY="YOUR_MORPH_API_KEY"
+```
+
+To specify which provider to use, add the `provider_type` parameter in your configuration:
+
+```yaml
+# For E2B
+provider_type: e2b
+
+# For Morph
+provider_type: morph
+```
+
+##### Dataset Requirements
+
+Make sure your dataset contains a `verification_info` column with the following schema (adopted from PrimeIntellect's excellent [datasets](https://huggingface.co/collections/PrimeIntellect/synthetic-1-67a2c399cfdd6c9f7fae0c37) of verifiable problems):
 
 ```python
 {
-    "language": "python",
+    "language": "python",  # Morph supports more languages including C++, Java, etc.
     "test_cases": [
         {
             "input": "4\n4\n0001\n1000\n0011\n0111\n3\n010\n101\n0\n2\n00000\n00001\n4\n01\n001\n0001\n00001\n",
@@ -213,7 +299,6 @@ Then make sure your dataset contains a `verification_info` column with the follo
         }
     ],
 }
-```
 
 For example, to train a smol model on Python problems, start the vLLM server:
 
@@ -224,19 +309,74 @@ CUDA_VISIBLE_DEVICES=0 trl vllm-serve --model Qwen/Qwen2.5-1.5B-Instruct
 Then run training with:
 
 ```shell
-CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 ACCELERATE_LOG_LEVEL=info \ 
-    accelerate launch --config_file recipes/accelerate_configs/zero2.yaml --num_processes=7 
+CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 ACCELERATE_LOG_LEVEL=info \
+    accelerate launch --config_file recipes/accelerate_configs/zero2.yaml --num_processes=7 \
     src/open_r1/grpo.py --config recipes/Qwen2.5-1.5B-Instruct/grpo/config_demo_code.yaml
 ```
 
-#### IOI problems
+##### Using Router Services
 
-We provide a `ioi_code_reward` reward function for executing problems from [IOI](https://hf.co/datasets/open-r1/ioi) using [piston](https://github.com/engineer-man/piston).
+It is possible to be rate limited when too many scripts are executed on sandbox services. For both providers, we offer router scripts that can be launched on a CPU node:
 
-To get piston workers running, see [slurm/piston/README.md](./slurm/piston/README.md).
-Set your environment variable `PISTON_ENDPOINTS` to `slurm` or to a list of piston worker endpoints.
+For E2B:
+```shell
+sbatch slurm/e2b_router.slurm
+```
 
-See the [example recipe](./recipes/Qwen2.5-1.5B-Instruct/grpo/config_demo_code_ioi.yaml) for how to use the reward function:
+For Morph:
+```shell
+sbatch slurm/morph_router.slurm
+```
+
+Then add the router URL in your training YAML config:
+```yaml
+# For E2B
+e2b_router_url: 1.2.3.4:8000
+
+# For Morph
+morph_router_url: 1.2.3.4:8000
+```
+
+The port should match the one used when launching the router.
+All training jobs can share the same router IP which will ensure parallel executions are properly managed.
+
+#### Competitive Programming problems: IOI & CodeForces
+
+We provide `ioi_code_reward` and `cf_code_reward` reward functions for executing problems from [IOI](https://hf.co/datasets/open-r1/ioi) and [CodeForces](https://huggingface.co/datasets/open-r1/codeforces), respectively. You can use either [piston](https://github.com/engineer-man/piston) or Morph (currently IOI only) as your execution provider.
+
+##### Piston 
+
+To use Piston:
+1. Get piston workers running, see [slurm/piston/README.md](./slurm/piston/README.md)
+2. Set your environment variable `PISTON_ENDPOINTS` to `slurm` or to a list of piston worker endpoints
+
+For IOI:
+
+3. In your configuration, use `ioi_provider: "piston"`
+
+For CodeForces:
+
+3. Download the generated (hard) test cases:
+```
+# change PATH_TO_SAVE_TESTCASES. Increase --max-workers according to your machine's capacity
+huggingface-cli download open-r1/codeforces --repo-type=dataset --include='generated_tests/*.parquet' --max-workers=8 --local-dir PATH_TO_SAVE_TESTCASES 
+```
+4. Save the path in .env:
+```
+CF_TESTS_FOLDER=PATH_TO_SAVE_TESTCASES
+```
+
+##### Morph 
+
+Morph is a cloud-based solution that provides sandboxed environments for running code. To use it:
+1. Install the Morph client: `pip install morphcloud`
+2. Add your Morph API key to the `.env` file: `MORPH_API_KEY="your_key_here"`
+3. In your configuration, use `ioi_provider: "morph"`
+
+##### Example recipes
+For IOI:
+
+See the [example recipe](./recipes/Qwen2.5-1.5B-Instruct/grpo/config_demo_code_ioi.yaml) for how to use the IOI reward function:
 
 ```shell
 ACCELERATE_LOG_LEVEL=info accelerate launch --config_file recipes/accelerate_configs/zero2.yaml \
@@ -244,36 +384,10 @@ ACCELERATE_LOG_LEVEL=info accelerate launch --config_file recipes/accelerate_con
     --config recipes/Qwen2.5-1.5B-Instruct/grpo/config_demo_code_ioi.yaml
 ```
 
-
-#### Data decontamination
-
-Following [s1: Simple test-time scaling](https://arxiv.org/abs/2501.19393) the data can be decontaminated using the script at: [scripts/decontaminate.py](./scripts/decontaminate.py), which decontaminates a dataset using 8-grams and deduplicate the data. Sample run:
+For CodeForces:
 
 ```shell
-python scripts/decontaminate.py \
-    --dataset "open-r1/verifiable-coding-problems-python" \
-    --problem_column problem \
-    --cleanup
-```
-
-It will decontaminate against the benchmark datasets, and remove the contaminated samples afterwards. If no argument `--new_dataset_name` is provided, the same dataset will be reused, adding a `_decontaminated`. It runs against the prompt, which for this dataset is the column `problem`, but a different one can be provided.
-
-Arguments for the script:
-
-```shell
-usage: decontaminate.py [-h] --dataset DATASET [--split SPLIT] [--ngram_size NGRAM_SIZE] [--problem_column PROBLEM_COLUMN] [--cleanup] [--new_dataset_name NEW_DATASET_NAME]
-
-options:
-  -h, --help            show this help message and exit
-  --dataset DATASET     Name of the dataset to check for contamination.
-  --split SPLIT         Split to check for contamination, defaults to `train`.
-  --ngram_size NGRAM_SIZE
-                        Size of n-grams to build, defaults to 8.
-  --problem_column PROBLEM_COLUMN
-                        Name of the column containing the problem (prompt).
-  --cleanup           Whether to remove the contaminated rows before pushing the dataset.
-  --new_dataset_name NEW_DATASET_NAME
-                        New name for the dataset. If not provided, will reuse the name and add a `_decontaminated` to the name.
+sbatch --job-name=cf-grpo --nodes=2 slurm/train.slurm --model Qwen2.5-Coder-7B-Instruct --task grpo --config codeforces --accelerator zero3 --dp 8 --tp 1
 ```
 
 ### Launching jobs on a Slurm cluster
@@ -281,48 +395,76 @@ options:
 If you have access to a Slurm cluster, we provide a `slurm/train.slurm` script that will automatically queue training jobs for you. Here's how you can use it:
 
 ```shell
-sbatch --job-name=open_r1 --nodes=1 slurm/train.slurm {model_name} {task} {config_suffix} {accelerator}
+sbatch --job-name=open_r1 --nodes=1 slurm/train.slurm --model {model_name} --task {task} --config {config_suffix} --accelerator {accelerator}
 ```
 
 Here `{model_name}` and `{task}` are defined as above, while `{config_suffix}` refers to the specific config and `{accelerator}` refers to the choice of 🤗 Accelerate config in `recipes/accelerate_configs`. If you wish to override the default config parameters, you can provide them by appending a space-separated string like `'--arg1=value1 --arg2=value2'`. Here's a concrete example to run SFT on 1 node of 8 GPUs:
 
 ```shell
-# Launch on Slurm and override default hyperparameters
-sbatch --job-name=open_r1 --nodes=1 slurm/train.slurm Qwen2.5-1.5B-Instruct sft demo zero3 '--per_device_train_batch_size=1 --num_train_epochs=5'
+sbatch --job-name=open_r1 --nodes=1 slurm/train.slurm --model OpenR1-Distill-7B --task sft --config distill --accelerator zero3
 ```
 
 You can scale the number of nodes by increasing the `--nodes` flag.
 
+For GRPO, we use 1 node for the vLLM server and N nodes for training. For example, to run GRPO on 1+1 nodes with mixed data and tensor parallelism, run:
+
+```shell
+sbatch --job-name=open_r1 --nodes=2 slurm/train.slurm --model Qwen2.5-1.5B-Instruct --task grpo --config demo --accelerator zero2 --dp 4 --tp 2
+```
+
 > [!NOTE]
 > The configuration in `slurm/train.slurm` is optimised for the Hugging Face Compute Cluster and may require tweaking to be adapted to your own compute nodes.
 
+### Customising the dataset mixture
+
+To combine multiple datasets as a single training mixture, you can specify the `dataset_mixture` parameter in the YAML config file. Here's a template for how to do this:
+
+```yaml
+dataset_mixture:
+  datasets:                     # List of datasets to include in the mixture
+    - id: dataset_1             # Hub dataset ID
+      config: config_name_1     # Name of the dataset config
+      split: split_1            # Split to use from the dataset
+      columns:                  # Columns to keep
+        - column_1              
+        - column_2    
+      weight: 0.25              # Fraction of dataset to use
+    - id: dataset_2
+      config: config_name_2
+      split: split_2
+      columns:                  
+        - column_1              
+        - column_2   
+      weight: 0.5
+  seed: 42                      # Seed for shuffling the combined dataset
+  test_split_size: 0.1          # Fraction of mixture to use for a test split
+```
+
 ## Evaluating models
 
-We use `lighteval` to evaluate models, with custom tasks defined in `src/open_r1/evaluate.py`. For models which fit on a single GPU, run:
+We use `lighteval` to evaluate models. For models which fit on a single GPU, run:
 
 ```shell
+export VLLM_WORKER_MULTIPROC_METHOD=spawn # Required for vLLM
 MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 OUTPUT_DIR=data/evals/$MODEL
 
 # AIME 2024
 TASK=aime24
-lighteval vllm $MODEL_ARGS "custom|$TASK|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|$TASK|0|0" \
     --use-chat-template \
     --output-dir $OUTPUT_DIR
 
 # MATH-500
 TASK=math_500
-lighteval vllm $MODEL_ARGS "custom|$TASK|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|$TASK|0|0" \
     --use-chat-template \
     --output-dir $OUTPUT_DIR
 
 # GPQA Diamond
 TASK=gpqa:diamond
-lighteval vllm $MODEL_ARGS "custom|$TASK|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|$TASK|0|0" \
     --use-chat-template \
     --output-dir $OUTPUT_DIR
 
@@ -332,22 +474,18 @@ lighteval vllm $MODEL_ARGS "extended|lcb:codegeneration|0|0" \
     --output-dir $OUTPUT_DIR 
 ```
 
-> [!IMPORTANT]
-> You must set `max_model_length=32768` in the `vllm` command to align with the `max_new_tokens` we define per eval. Without this, `lighteval` will throw an error.
-
 To increase throughput across multiple GPUs, use _data parallel_ as follows:
 
 ```shell
 NUM_GPUS=8
 MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,data_parallel_size=$NUM_GPUS,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,data_parallel_size=$NUM_GPUS,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 TASK=aime24
 OUTPUT_DIR=data/evals/$MODEL
 
-lighteval vllm $MODEL_ARGS "custom|$TASK|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|$TASK|0|0" \
     --use-chat-template \
-    --output-dir $OUTPUT_DIR 
+    --output-dir $OUTPUT_DIR
 ```
 
 For large models which require sharding across GPUs, use _tensor parallel_ and run:
@@ -355,15 +493,14 @@ For large models which require sharding across GPUs, use _tensor parallel_ and r
 ```shell
 NUM_GPUS=8
 MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,tensor_parallel_size=$NUM_GPUS,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,tensor_parallel_size=$NUM_GPUS,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 TASK=aime24
 OUTPUT_DIR=data/evals/$MODEL
 
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
-lighteval vllm $MODEL_ARGS "custom|$TASK|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|$TASK|0|0" \
     --use-chat-template \
-    --output-dir $OUTPUT_DIR 
+    --output-dir $OUTPUT_DIR
 ```
 
 You can also launch an evaluation with `make evaluate`, specifying the model, task, and optionally the parallelism technique and number of GPUs.
@@ -388,32 +525,40 @@ make evaluate MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-32B TASK=aime24 PARALLE
 
 ## Reproducing Deepseek's evaluation results
 
-> [!NOTE]
-> The DeepSeek-R1 paper uses sampling with 64 responses per query to estimate `pass@1`. Below, we report the results from sampling 1 response per query, which likely explains the small 1-3σ discrepancies between our results and theirs.
+The DeepSeek-R1 paper uses sampling with 4-64 responses per query to estimate `pass@1` accuracy, but does not specify the specific number of responses per benchmark. In the tables below, we estimate `pass@1` accuracy with the following number of responses per query:
+
+|   Benchmark   | Number of responses per query |
+|:-------------:|:-----------------------------:|
+|   AIME 2024   |              64               |
+|   MATH-500    |               4               |
+| GPQA Diamond  |               8               |
+| LiveCodeBench |              16               |
+
+
+Note that for benchmarks like AIME24, it is important to sample many responses as there are only 30 problems and this can introduce high variance across repeated runs. The choice of how many responses to sample per prompt likely explains the small differences between our evaluation results and those reported by DeepSeek.
 
 ### AIME 2024
 
 We are able to reproduce Deepseek's reported results on the AIME 2024 benchmark within ~1-3 standard deviations:
 
 | Model                         | AIME 2024 (🤗 LightEval) | AIME 2024 (DeepSeek Reported) |
-|:------------------------------|:-----------------------:|:----------------------------:|
-| DeepSeek-R1-Distill-Qwen-1.5B |          26.7           |             28.9             |
-| DeepSeek-R1-Distill-Qwen-7B   |          56.6           |             55.5             |
-| DeepSeek-R1-Distill-Qwen-14B  |          60.0           |             69.7             |
-| DeepSeek-R1-Distill-Qwen-32B  |          73.2           |             72.6             |
-| DeepSeek-R1-Distill-Llama-8B  |          43.3           |             50.4             |
-| DeepSeek-R1-Distill-Llama-70B |          73.3           |             70.0             |
+|:------------------------------|:------------------------:|:-----------------------------:|
+| DeepSeek-R1-Distill-Qwen-1.5B |           30.7           |             28.9              |
+| DeepSeek-R1-Distill-Qwen-7B   |           50.8           |             55.5              |
+| DeepSeek-R1-Distill-Qwen-14B  |           65.9           |             69.7              |
+| DeepSeek-R1-Distill-Qwen-32B  |           69.7           |             72.6              |
+| DeepSeek-R1-Distill-Llama-8B  |           43.9           |             41.7              |
+| DeepSeek-R1-Distill-Llama-70B |           63.0           |             70.0              |
 
 To reproduce these results use the following command:
 
 ```shell
 NUM_GPUS=1 # Set to 8 for 32B and 70B models
 MODEL=deepseek-ai/{model_name}
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 OUTPUT_DIR=data/evals/$MODEL
 
-lighteval vllm $MODEL_ARGS "custom|aime24|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|aime24|0|0" \
     --use-chat-template \
     --output-dir $OUTPUT_DIR
 ```
@@ -430,23 +575,23 @@ We are able to reproduce Deepseek's reported results on the MATH-500 benchmark w
 
 | Model                         | MATH-500 (🤗 LightEval) | MATH-500 (DeepSeek Reported) |
 |:------------------------------|:-----------------------:|:----------------------------:|
-| DeepSeek-R1-Distill-Qwen-1.5B |          84.6           |             83.9             |
-| DeepSeek-R1-Distill-Qwen-7B   |          93.0           |             92.8             |
-| DeepSeek-R1-Distill-Qwen-14B  |          95.0           |             93.9             |
-| DeepSeek-R1-Distill-Qwen-32B  |          96.6           |             94.3             |
+| DeepSeek-R1-Distill-Qwen-1.5B |          83.1           |             83.9             |
+| DeepSeek-R1-Distill-Qwen-7B   |          94.5           |             92.8             |
+| DeepSeek-R1-Distill-Qwen-14B  |          94.1           |             93.9             |
+| DeepSeek-R1-Distill-Qwen-32B  |          95.6           |             94.3             |
 | DeepSeek-R1-Distill-Llama-8B  |          88.6           |             89.1             |
-| DeepSeek-R1-Distill-Llama-70B |          96.4           |             94.5             |
+| DeepSeek-R1-Distill-Llama-70B |          95.1           |             94.5             |
 
 To reproduce these results use the following command:
 
 ```shell
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
 NUM_GPUS=1 # Set to 8 for 32B and 70B models
 MODEL=deepseek-ai/{model_name}
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 OUTPUT_DIR=data/evals/$MODEL
 
-lighteval vllm $MODEL_ARGS "custom|math_500|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|math_500|0|0" \
     --use-chat-template \
     --output-dir $OUTPUT_DIR
 ```
@@ -463,23 +608,23 @@ We are able to reproduce Deepseek's reported results on the GPQA Diamond benchma
 
 | Model                         | GPQA Diamond (🤗 LightEval) | GPQA Diamond (DeepSeek Reported) |
 |:------------------------------|:---------------------------:|:--------------------------------:|
-| DeepSeek-R1-Distill-Qwen-1.5B |            34.3             |               33.8               |
+| DeepSeek-R1-Distill-Qwen-1.5B |            35.8             |               33.8               |
 | DeepSeek-R1-Distill-Qwen-7B   |            50.5             |               49.1               |
-| DeepSeek-R1-Distill-Qwen-14B  |            59.6             |               59.1               |
-| DeepSeek-R1-Distill-Qwen-32B  |            63.6             |               62.1               |
-| DeepSeek-R1-Distill-Llama-8B  |            52.0             |               49.0               |
-| DeepSeek-R1-Distill-Llama-70B |            67.2             |               65.2               |
+| DeepSeek-R1-Distill-Qwen-14B  |            61.5             |               59.1               |
+| DeepSeek-R1-Distill-Qwen-32B  |            63.1             |               62.1               |
+| DeepSeek-R1-Distill-Llama-8B  |            46.7             |               49.0               |
+| DeepSeek-R1-Distill-Llama-70B |            67.4             |               65.2               |
 
 To reproduce these results use the following command:
 
 ```shell
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
 NUM_GPUS=1 # Set to 8 for 32B and 70B models
-MODEL=deepseek-ai/{model_name}
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 OUTPUT_DIR=data/evals/$MODEL
 
-lighteval vllm $MODEL_ARGS "custom|gpqa:diamond|0|0" \
-    --custom-tasks src/open_r1/evaluate.py \
+lighteval vllm $MODEL_ARGS "lighteval|gpqa:diamond|0|0" \
     --use-chat-template \
     --output-dir $OUTPUT_DIR
 ```
@@ -493,20 +638,20 @@ python scripts/run_benchmarks.py --model-id {model_id}  --benchmarks gpqa
 We are able to reproduce Deepseek's reported results on the LiveCodeBench code generation benchmark within ~1-3 standard deviations:
 
 | Model                         | LiveCodeBench (🤗 LightEval) | LiveCodeBench (DeepSeek Reported) |
-|:------------------------------|:----------------------------:|:--------------------------------:|
-| DeepSeek-R1-Distill-Qwen-1.5B |             16.3             |               16.9               |
-| DeepSeek-R1-Distill-Qwen-7B   |             36.6             |               37.6               |
-| DeepSeek-R1-Distill-Qwen-14B  |             51.5             |               53.1               |
-| DeepSeek-R1-Distill-Qwen-32B  |             56.6             |               57.2               |
-| DeepSeek-R1-Distill-Llama-8B  |             37.0             |               39.6               |
-| DeepSeek-R1-Distill-Llama-70B |             54.5             |               57.5               |
+|:------------------------------|:----------------------------:|:---------------------------------:|
+| DeepSeek-R1-Distill-Qwen-1.5B |             16.1             |               16.9                |
+| DeepSeek-R1-Distill-Qwen-7B   |             37.4             |               37.6                |
+| DeepSeek-R1-Distill-Qwen-14B  |             51.3             |               53.1                |
+| DeepSeek-R1-Distill-Qwen-32B  |             56.0             |               57.2                |
+| DeepSeek-R1-Distill-Llama-8B  |             37.4             |               39.6                |
+| DeepSeek-R1-Distill-Llama-70B |             55.9             |               57.5                |
 
 To reproduce these results use the following command:
 
 ```shell
 NUM_GPUS=1 # Set to 8 for 32B and 70B models, or data_parallel_size=8 with the smaller models for speed
 MODEL=deepseek-ai/{model_name}
-MODEL_ARGS="pretrained=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
+MODEL_ARGS="model_name=$MODEL,dtype=bfloat16,max_model_length=32768,gpu_memory_utilization=0.8,data_parallel_size=$NUM_GPUS,generation_parameters={max_new_tokens:32768,temperature:0.6,top_p:0.95}"
 OUTPUT_DIR=data/evals/$MODEL
 
 lighteval vllm $MODEL_ARGS "extended|lcb:codegeneration|0|0" \
@@ -604,6 +749,38 @@ sbatch slurm/generate.slurm \
 
 > [!NOTE]  
 > While the job is running, you can setup an SSH tunnel through the cluster login node to access the Ray dashboard from your computer running `ssh -L 8265:ray_ip_head_node:8265 <login_node>`, then browsing `http://localhost:8265`
+
+
+### Data decontamination
+
+Following [s1: Simple test-time scaling](https://huggingface.co/papers/2501.19393) the data can be decontaminated using the script at: [scripts/decontaminate.py](./scripts/decontaminate.py), which decontaminates a dataset using 8-grams and deduplicate the data. Sample run:
+
+```shell
+python scripts/decontaminate.py \
+    --dataset "open-r1/verifiable-coding-problems-python" \
+    --problem_column problem \
+    --cleanup
+```
+
+It will decontaminate against the benchmark datasets, and remove the contaminated samples afterwards. If no argument `--new_dataset_name` is provided, the same dataset will be reused, adding a `_decontaminated`. It runs against the prompt, which for this dataset is the column `problem`, but a different one can be provided.
+
+Arguments for the script:
+
+```shell
+usage: decontaminate.py [-h] --dataset DATASET [--split SPLIT] [--ngram_size NGRAM_SIZE] [--problem_column PROBLEM_COLUMN] [--cleanup] [--new_dataset_name NEW_DATASET_NAME]
+
+options:
+  -h, --help            show this help message and exit
+  --dataset DATASET     Name of the dataset to check for contamination.
+  --split SPLIT         Split to check for contamination, defaults to `train`.
+  --ngram_size NGRAM_SIZE
+                        Size of n-grams to build, defaults to 8.
+  --problem_column PROBLEM_COLUMN
+                        Name of the column containing the problem (prompt).
+  --cleanup           Whether to remove the contaminated rows before pushing the dataset.
+  --new_dataset_name NEW_DATASET_NAME
+                        New name for the dataset. If not provided, will reuse the name and add a `_decontaminated` to the name.
+```
 
 ## Contributing
 
