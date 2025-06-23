@@ -23,6 +23,9 @@ if [[ "$*" == *"--help"* ]]; then
   exit 0
 fi
 
+HF_DATASETS_CACHE="/fsx/aymeric/.cache/datasets"
+TRANSFORMERS_CACHE="/fsx/aymeric/.cache/transformers"
+
 # Specific configuration optimized for the Hugging Face Compute Cluster
 module load cuda/12.4
 set -x -e
