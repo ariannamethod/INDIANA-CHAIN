@@ -37,7 +37,7 @@ echo "START TIME: $(date)"
 
 # Refresh Weka on h4 cache
 echo "Refreshing Weka filesystem..."
-find -L /fsx/h4/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
+# find -L /fsx/h4/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
 
 # Default values
 MODEL=""
