@@ -22,7 +22,7 @@ per_device_train_batch_size: 4 # Change this depending on the context length of 
 
 # SFT trainer config
 max_steps: -1
-num_train_epochs: 6
+num_train_epochs: 1
 bf16: true
 do_eval: false
 eval_strategy: 'no'

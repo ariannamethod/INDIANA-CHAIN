@@ -185,6 +185,10 @@ class SFTConfig(trl.SFTConfig):
         default=None,
         metadata={"help": "The optional system prompt to use for benchmarking."},
     )
+    vision_model: bool = field(
+        default=False,
+        metadata={"help": "Whether this is a vision-language model training."},
+    )
     hub_model_revision: Optional[str] = field(
         default="main",
         metadata={"help": "The Hub model branch to push the model to."},

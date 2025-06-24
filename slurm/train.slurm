@@ -23,8 +23,6 @@ if [[ "$*" == *"--help"* ]]; then
   exit 0
 fi
 
-HF_DATASETS_CACHE="/fsx/aymeric/.cache/datasets"
-TRANSFORMERS_CACHE="/fsx/aymeric/.cache/transformers"
 
 # Specific configuration optimized for the Hugging Face Compute Cluster
 module load cuda/12.4
@@ -88,10 +86,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-export HF_DATASETS_CACHE="/fsx/aymeric/.cache/datasets"
-export TRANSFORMERS_CACHE="/fsx/aymeric/.cache/transformers"
-HF_DATASETS_CACHE="/fsx/aymeric/.cache/datasets"
-TRANSFORMERS_CACHE="/fsx/aymeric/.cache/transformers"
+export HF_HOME="/fsx/aymeric/.cache/"
+HF_HOME="/fsx/aymeric/.cache/"
 
 # Validate required arguments
 if [[ -z "$MODEL" || -z "$TASK" || -z "$CONFIG_SUFFIX" || -z "$ACCELERATOR" ]]; then
@@ -143,8 +139,8 @@ if [[ "$USE_VLLM" == "true" ]]; then
 fi
 
 # force crashing on nccl issues like hanging broadcast
-export NCCL_ASYNC_ERROR_HANDLING=1
-# export NCCL_DEBUG=INFO
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_SUBSYS=COLL
 # export NCCL_SOCKET_NTHREADS=1
 # export NCCL_NSOCKS_PERTHREAD=1

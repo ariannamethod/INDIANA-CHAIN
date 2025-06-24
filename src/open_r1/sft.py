@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Supervised fine-tuning script for decoder language models.
+Supervised fine-tuning script for decoder language models and vision-language models.
 
 Usage:
 
@@ -39,16 +39,46 @@ import sys
 
 import datasets
 import transformers
-from transformers import set_seed
+from transformers import set_seed, AutoModelForVision2Seq, AutoProcessor, LlavaForConditionalGeneration
 from transformers.trainer_utils import get_last_checkpoint
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
 from open_r1.configs import ScriptArguments, SFTConfig
-from open_r1.utils import get_dataset, get_model, get_tokenizer
+from open_r1.utils import get_dataset, get_model, get_tokenizer, get_processor
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
 
 logger = logging.getLogger(__name__)
+
+
+def create_vlm_collate_fn(processor):
+    """Create a data collator for VLM training that handles images and text."""
+    
+    def collate_fn(examples):
+        # Get the texts and images, and apply the chat template
+        texts = [processor.apply_chat_template(example["messages"], tokenize=False) for example in examples]
+        images = [example["images"] for example in examples]
+        
+        # Handle LLaVA 1.5 which doesn't support multiple images
+        if isinstance(processor.model, LlavaForConditionalGeneration):
+            images = [image[0] if image else None for image in images]
+
+        # Tokenize the texts and process the images
+        batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
+
+        # The labels are the input_ids, and we mask the padding tokens in the loss computation
+        labels = batch["input_ids"].clone()
+        labels[labels == processor.tokenizer.pad_token_id] = -100
+        
+        # Ignore the image token index in the loss computation (model specific)
+        if hasattr(processor, 'image_token'):
+            image_token_id = processor.tokenizer.convert_tokens_to_ids(processor.image_token)
+            labels[labels == image_token_id] = -100
+            
+        batch["labels"] = labels
+        return batch
+    
+    return collate_fn
 
 
 def main(script_args, training_args, model_args):
@@ -84,15 +114,39 @@ def main(script_args, training_args, model_args):
         init_wandb_training(training_args)
 
     ######################################
-    # Load dataset, tokenizer, and model #
+    # Load dataset, processor/tokenizer, and model #
     ######################################
     dataset = get_dataset(script_args)
-    tokenizer = get_tokenizer(model_args, training_args)
-    model = get_model(model_args, training_args)
 
-    if tokenizer.chat_template is None:
-        logger.info("No chat template provided, defaulting to ChatML.")
-        model, tokenizer = setup_chat_format(model, tokenizer, format="chatml")
+    if training_args.vision_model:
+        logger.info("Setting up vision-language model training")
+        
+        # Set VLM-specific training arguments (following TRL reference)
+        training_args.gradient_checkpointing_kwargs = dict(use_reentrant=False)
+        training_args.remove_unused_columns = False
+        training_args.dataset_kwargs = {"skip_prepare_dataset": True}
+        
+        # Load processor and model for VLM
+        processor = get_processor(model_args, training_args)
+        model = get_model(model_args, training_args)  # This should return AutoModelForVision2Seq
+        data_collator = create_vlm_collate_fn(processor)
+        processing_class = processor.tokenizer
+        model_tags = ["open-r1", "vision-language", "vlm"]
+        
+    else:
+        logger.info("Setting up text-only model training")
+        
+        # Load tokenizer and model for text-only
+        tokenizer = get_tokenizer(model_args, training_args)
+        model = get_model(model_args, training_args)
+        
+        if tokenizer.chat_template is None:
+            logger.info("No chat template provided, defaulting to ChatML.")
+            model, tokenizer = setup_chat_format(model, tokenizer, format="chatml")
+            
+        data_collator = None  # Use default
+        processing_class = tokenizer
+        model_tags = ["open-r1"]
 
     ############################
     # Initialize the SFT Trainer
@@ -100,13 +154,14 @@ def main(script_args, training_args, model_args):
     trainer = SFTTrainer(
         model=model,
         args=training_args,
+        data_collator=data_collator,
         train_dataset=dataset[script_args.dataset_train_split],
         eval_dataset=(
             dataset[script_args.dataset_test_split]
             if training_args.eval_strategy != "no"
             else None
         ),
-        processing_class=tokenizer,
+        processing_class=processing_class,
         peft_config=get_peft_config(model_args),
         callbacks=get_callbacks(training_args, model_args),
     )
@@ -131,16 +186,13 @@ def main(script_args, training_args, model_args):
     # Save model and create model card
     ##################################
     logger.info("*** Save model ***")
-    # Align the model's generation config with the tokenizer's eos token
-    # to avoid unbounded generation in the transformers `pipeline()` function
-    trainer.model.generation_config.eos_token_id = tokenizer.eos_token_id
     trainer.save_model(training_args.output_dir)
     logger.info(f"Model saved to {training_args.output_dir}")
 
     # Save everything else on main process
     kwargs = {
         "dataset_name": script_args.dataset_name,
-        "tags": ["open-r1"],
+        "tags": model_tags,
     }
     if trainer.accelerator.is_main_process:
         trainer.create_model_card(**kwargs)
@@ -164,6 +216,9 @@ def main(script_args, training_args, model_args):
     if training_args.push_to_hub:
         logger.info("Pushing to hub...")
         trainer.push_to_hub(**kwargs)
+        # Also push processor for VLM models
+        if training_args.vision_model and trainer.accelerator.is_main_process:
+            processor.push_to_hub(training_args.hub_model_id)
 
 
 if __name__ == "__main__":
