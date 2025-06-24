@@ -115,8 +115,6 @@ for arg in "${ARGS[@]}"; do
     fi
 done
 
-echo "Gradient accumulation steps: $GRAD_ACC_STEPS"
-
 MODEL=$(grep 'model_name_or_path:' $CONFIG_FILE | awk '{print $2}')
 REVISION=$(grep 'model_revision:' $CONFIG_FILE | head -n 1 | awk '{print $2}')
 

@@ -1,16 +1,16 @@
 # Model arguments
 # You can download the model and manually change the rope to 300k/500k and max_position_embeddings to 32768
-model_name_or_path: HuggingFaceTB/SmolLM2-1.7B-Instruct
+model_name_or_path: Qwen/Qwen2.5-VL-3B-Instruct
 model_revision: main
 torch_dtype: bfloat16
 attn_implementation: sdpa
 
 # Data training arguments
-dataset_name: smolagents/codeagent-traces
+dataset_name: smolagents/aguvis-stage-2
 dataset_num_proc: 48
 
 #SFT hyperparam
-max_length: 8192 # You can set this to 32768 if you change the rope, but you need to change the config.json file 
+max_length: 32768
 weight_decay: 0.0001
 optim: adamw_torch
 lr_scheduler_type: linear
@@ -29,12 +29,12 @@ eval_strategy: 'no'
 gradient_checkpointing: true
 gradient_checkpointing_kwargs:
   use_reentrant: false
-hub_model_id: OpenR1-SmolLM2-1.7B-Instruct-Agentic
+hub_model_id: smolagents-Qwen2.5-VL-3B-Instruct-Agentic
 hub_strategy: every_save
 log_level: info
 logging_steps: 5
 logging_strategy: steps
-output_dir: data/OpenR1-SmolLM2-1.7B-Instruct-Agentic
+output_dir: data/smolagents-Qwen2.5-VL-3B-Instruct-Agentic
 overwrite_output_dir: true
 push_to_hub: true
 report_to:
