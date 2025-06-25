@@ -10,7 +10,7 @@ import os
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Generator, Callable
 
 from tqdm import tqdm
 from datasets import Dataset
@@ -101,16 +101,16 @@ def discover_dataset_config(dataset_path: str) -> List[Dict[str, Any]]:
 
     # Find all JSON files in the train directory
     for config in config_dict:
-        split_name = config["json_path"].replace(".json", "").replace("-l1", "").replace("-l2", "")
+        subset_name = config["json_path"].replace(".json", "").replace("-l1", "").replace("-l2", "")
         
         # Skip if we already processed this split
-        if split_name in processed_splits:
+        if subset_name in processed_splits:
             continue
             
-        config["split_name"] = split_name
+        config["subset_name"] = subset_name
         configs.append(config)
-        processed_splits.add(split_name)
-        print(f"Discovered config: {config['split_name']} -> {config['images_folder']}")
+        processed_splits.add(subset_name)
+        print(f"Discovered config: {config['subset_name']} -> {config['images_folder']}")
 
     return configs
 
@@ -142,6 +142,18 @@ def extract_zip_files(dataset_path: str):
         with zipfile.ZipFile(zip_file, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
         print(f"Extracted to: {extract_dir}")
+
+
+def check_subset_exists(repo_id: str, subset_name: str) -> bool:
+    """Check if a subset already exists in the remote dataset."""
+    try:
+        # Try to get dataset info with specific subset
+        from datasets import get_dataset_config_names
+        config_names = get_dataset_config_names(repo_id)
+        return subset_name in config_names
+    except Exception as e:
+        print(f"Could not check if subset exists: {e}")
+        return False
 
 
 def load_images_from_folder(
@@ -179,45 +191,29 @@ def convert_to_chat_format(data_item: Dict[str, Any]) -> List[Dict[str, Any]]:
     return chat_messages
 
 
-def process_split(config: Dict[str, Any], dataset_path: str, destination_path: str) -> Dataset:
+def process_split(config: Dict[str, Any], dataset_path: str, destination_path: str) -> Callable:
     """Process a single dataset split."""
-    split_name = config['split_name']
+    subset_name = config['subset_name']
     repo_id = "smolagents/aguvis-stage-2"
 
-    # Check if the split already exists on the HuggingFace Hub
-    repo_info = api.repo_info(repo_id, repo_type="dataset")
-    if hasattr(repo_info, "siblings"):
-        # Check if the split exists as a parquet file in the repo
-        split_exists = any(
-            (f"{split_name}-" in sibling.rfilename or f"{split_name}." in sibling.rfilename)
-            and sibling.rfilename.endswith(".parquet")
-            for sibling in repo_info.siblings
-        )
-        if split_exists:
-            print(f"Split '{split_name}' already exists in {repo_id}, skipping processing.")
-            return None
+    # Check if the subset already exists in the remote dataset
+    if check_subset_exists(repo_id, subset_name):
+        print(f"Subset '{subset_name}' already exists in {repo_id}, skipping processing.")
+        return None
 
-    print(f"Processing split: {split_name}")
+    print(f"Processing split: {subset_name}")
 
     dataset_dir = Path(dataset_path)
-    images_folder = dataset_dir / config["split_name"] / config["images_folder"]
-
-    if not images_folder.exists():
-        print(f"Warning: Images folder not found: {images_folder}")
-        return None
+    images_folder = dataset_dir / config["subset_name"] / config["images_folder"]
 
     # Find all JSON files that match this split (e.g., mind2web-l1.json, mind2web-l2.json)
     json_files = []
     for cfg in config_dict:
         cfg_split = cfg["json_path"].replace(".json", "").replace("-l1", "").replace("-l2", "")
-        if cfg_split == split_name:
+        if cfg_split == subset_name:
             json_path = dataset_dir / cfg["json_path"]
             if json_path.exists():
                 json_files.append(json_path)
-
-    if not json_files:
-        print(f"Warning: No JSON files found for split: {split_name}")
-        return None
 
     # Load and merge JSON data from all matching files
     data = []
@@ -229,48 +225,39 @@ def process_split(config: Dict[str, Any], dataset_path: str, destination_path: s
             print(f"  Added {len(file_data)} items")
 
     def get_images_total_weight(images_folder: Path, image_paths: list) -> int:
-        return sum(os.path.getsize(images_folder / img_path) for img_path in image_paths)
+        try:
+            return sum(os.path.getsize(images_folder / img_path) for img_path in image_paths)
+        except Exception as e:
+            print(f"Error getting image weight: {e}", images_folder, image_paths)
+            return 0
 
     processed_data = []
     current_weight = 0
     shard_number = 0
     MAX_WEIGHT = 1000 * 1024 * 1024
 
-    pbar = tqdm(data)
-    for item in pbar:
-        # Extract image paths from the data item
-        image_paths = []
-        if "images" in item:
-            image_paths = (
-                item["images"]
-                if isinstance(item["images"], list)
-                else [item["images"]]
-            )
-        elif "image" in item:
-            image_paths = [item["image"]]
+    def process_items() -> Generator[Dict[str, Any], None, None]:
+        pbar = tqdm(data)
+        for item in pbar:
+            # Extract image paths from the data item
+            image_paths = []
+            if "images" in item:
+                image_paths = (
+                    item["images"]
+                    if isinstance(item["images"], list)
+                    else [item["images"]]
+                )
+            elif "image" in item:
+                image_paths = [item["image"]]
 
-        # Estimate weight of these images
-        images_weight = get_images_total_weight(images_folder, image_paths)
+            # Load images
+            images = load_images_from_folder(images_folder, image_paths)
 
-        # Load images
-        images = load_images_from_folder(images_folder, image_paths)
+            texts = convert_to_chat_format(item)
 
-        texts = convert_to_chat_format(item)
-
-        entry = {"images": images, "texts": texts}
-        processed_data.append(entry)
-        current_weight += images_weight
-        pbar.set_description(f"Image weight: {int(current_weight / 1024 / 1024)} MB")
-        if current_weight >= MAX_WEIGHT:
-            dataset = Dataset.from_list(processed_data)
-            dataset.to_parquet(f"{destination_path}/shard-{shard_number}.parquet")
-            shard_number += 1
-
-            processed_data = []
-            current_weight = 0
-
-    dataset = Dataset.from_list(processed_data)
-    dataset.to_parquet(f"{destination_path}/shard-{shard_number}.parquet")
+            entry = {"images": images, "texts": texts}
+            yield entry
+    return process_items
 
 
 def authenticate_huggingface():
@@ -302,20 +289,34 @@ def main():
     for config in dataset_configs:
         print(f"\n{'=' * 50}")
         print(config)
-        process_split(config, dataset_path, f"{converted_folder}/{config['split_name']}")
+        process_items = process_split(config, dataset_path, f"{config['subset_name']}")
         
-        print(f"Processed and uploaded split: {config['split_name']}")
+        # Skip if process_split returned None (subset already exists)
+        if process_items is None:
+            continue
+            
+        print("Creating dataset...")
+        data = Dataset.from_generator(process_items)
+        print("Pushing to hub...")
+        # Fix: Use config_name for subset name and split="train"
+        data.push_to_hub(
+            "smolagents/aguvis-stage-2", 
+            config_name=config['subset_name'],  # This sets the subset name
+            split="train",  # This should be "train" not the subset name
+        )
+
+        print(f"Processed and uploaded subset: {config['subset_name']}")
 
         # Force garbage collection to manage memory
         gc.collect()
 
-    print(f"Splits uploaded!")
+    print(f"Subsets uploaded!")
 
     # Cleanup
     print("\nCleaning up temporary files...")
     # shutil.rmtree(dataset_path, ignore_errors=True)
 
-    api.upload_large_folder(folder_path=converted_folder, repo_id="smolagents/aguvis-stage-2", repo_type="dataset")
+    # api.upload_large_folder(folder_path=converted_folder, repo_id="smolagents/aguvis-stage-2", repo_type="dataset")
 
     shutil.rmtree(converted_folder, ignore_errors=True)
 
