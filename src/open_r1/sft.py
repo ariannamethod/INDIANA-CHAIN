@@ -51,35 +51,64 @@ from open_r1.utils.wandb_logging import init_wandb_training
 logger = logging.getLogger(__name__)
 
 
+
+
 def create_vlm_collate_fn(processor):
     """Create a data collator for VLM training that handles images and text."""
-    
+    from qwen_vl_utils import process_vision_info
+
     def collate_fn(examples):
-        # Get the texts and images, and apply the chat template
-        texts = [processor.apply_chat_template(example["texts"], tokenize=False) for example in examples]
-        images = [example["images"] for example in examples]
+        # Convert dataset format to Qwen2.5-VL message format
+        batch_messages = []
         
-        # Handle LLaVA 1.5 which doesn't support multiple images
-        # if isinstance(processor.model, LlavaForConditionalGeneration):
-        #     images = [image[0] if image else None for image in images]
-
-        # Tokenize the texts and process the images
-        batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
-
-        # The labels are the input_ids, and we mask the padding tokens in the loss computation
-        labels = batch["input_ids"].clone()
-        labels[labels == processor.tokenizer.pad_token_id] = -100
-        
-        # Ignore the image token index in the loss computation (model specific)
-        if hasattr(processor, 'image_token'):
-            image_token_id = processor.tokenizer.convert_tokens_to_ids(processor.image_token)
-            labels[labels == image_token_id] = -100
+        for example in examples:
+            example_texts = example["texts"]
+            example_images = example["images"]
             
-        batch["labels"] = labels
-        return batch
-    
-    return collate_fn
+            # Convert to Qwen2.5-VL structured message format
+            messages = []
+            for i, msg in enumerate(example_texts):
+                if msg["role"] == "user" and i == 0 and example_images:
+                    # First user message - add images
+                    content = []
+                    # Add images first
+                    for img in example_images:
+                        content.append({"type": "image", "image": img})
+                    # Then add text
+                    content.append({"type": "text", "text": msg["content"]})
+                    messages.append({"role": "user", "content": content})
+                else:
+                    # Regular text message
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            
+            batch_messages.append(messages)
 
+        # Process each example
+        texts = []
+        all_image_inputs = []
+        all_video_inputs = []
+        
+        for messages in batch_messages:
+            # Apply chat template
+            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+            texts.append(text)
+            
+            # Extract vision info
+            image_inputs, video_inputs = process_vision_info(messages)
+            all_image_inputs.extend(image_inputs if image_inputs else [])
+            all_video_inputs.extend(video_inputs if video_inputs else [])
+
+        # Process the batch
+        batch = processor(
+            text=texts,
+            images=all_image_inputs if all_image_inputs else None,
+            videos=all_video_inputs if all_video_inputs else None,
+            padding=True,
+            return_tensors="pt"
+        )
+        return batch.to("cuda")
+
+    return collate_fn
 
 def main(script_args, training_args, model_args):
     # Force single GPU mode if requested
@@ -159,12 +188,6 @@ def main(script_args, training_args, model_args):
     ############################
     # Initialize the SFT Trainer
     ############################
-    logger.info(f"""WHOLE DATASET INFO:
-    {model}
-    {training_args}
-    {script_args}
-    {model_args}
-    """)
     trainer = SFTTrainer(
         model=model,
         args=training_args,
