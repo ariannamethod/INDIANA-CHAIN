@@ -116,7 +116,7 @@ REVISION=$(grep 'model_revision:' $CONFIG_FILE | head -n 1 | awk '{print $2}')
 
 # Distributed configuration
 NUM_NODES=$SLURM_NNODES
-GPUS_PER_NODE=8
+GPUS_PER_NODE=1
 WORLD_SIZE=$(($NUM_NODES*$GPUS_PER_NODE))
 NODELIST=($(scontrol show hostnames $SLURM_JOB_NODELIST))
 MASTER_ADDR=${NODELIST[0]}  # First node for main process

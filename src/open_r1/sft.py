@@ -56,12 +56,12 @@ def create_vlm_collate_fn(processor):
     
     def collate_fn(examples):
         # Get the texts and images, and apply the chat template
-        texts = [processor.apply_chat_template(example["messages"], tokenize=False) for example in examples]
+        texts = [processor.apply_chat_template(example["texts"], tokenize=False) for example in examples]
         images = [example["images"] for example in examples]
         
         # Handle LLaVA 1.5 which doesn't support multiple images
-        if isinstance(processor.model, LlavaForConditionalGeneration):
-            images = [image[0] if image else None for image in images]
+        # if isinstance(processor.model, LlavaForConditionalGeneration):
+        #     images = [image[0] if image else None for image in images]
 
         # Tokenize the texts and process the images
         batch = processor(text=texts, images=images, return_tensors="pt", padding=True)
@@ -82,6 +82,14 @@ def create_vlm_collate_fn(processor):
 
 
 def main(script_args, training_args, model_args):
+    # Force single GPU mode if requested
+    # if hasattr(script_args, 'single_gpu') and script_args.single_gpu:
+    #     logger.info("Single GPU mode requested - setting CUDA_VISIBLE_DEVICES=0")
+    #     # Disable distributed training
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # training_args.local_rank = -1
+    # training_args.ddp_backend = None
+
     set_seed(training_args.seed)
 
     ###############
@@ -151,6 +159,12 @@ def main(script_args, training_args, model_args):
     ############################
     # Initialize the SFT Trainer
     ############################
+    logger.info(f"""WHOLE DATASET INFO:
+    {model}
+    {training_args}
+    {script_args}
+    {model_args}
+    """)
     trainer = SFTTrainer(
         model=model,
         args=training_args,
