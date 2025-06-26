@@ -94,19 +94,31 @@ def create_vlm_collate_fn(processor):
             texts.append(text)
             
             # Extract vision info
-            image_inputs, video_inputs = process_vision_info(messages)
+            image_inputs, _ = process_vision_info(messages)
             all_image_inputs.extend(image_inputs if image_inputs else [])
-            all_video_inputs.extend(video_inputs if video_inputs else [])
 
         # Process the batch
         batch = processor(
             text=texts,
             images=all_image_inputs if all_image_inputs else None,
-            videos=all_video_inputs if all_video_inputs else None,
             padding=True,
             return_tensors="pt"
         )
-        return batch.to("cuda")
+
+        # The labels are the input_ids, and we mask the padding tokens in the loss computation
+        labels = batch["input_ids"].clone()
+        labels[labels == processor.tokenizer.pad_token_id] = -100  #
+        # Ignore the image token index in the loss computation (model specific)
+        if isinstance(processor, Qwen2VLProcessor):
+            logger.info("DETECTED PROCESSOR")
+            image_tokens = [151652,151653,151655]
+        else: 
+            image_tokens = [processor.tokenizer.convert_tokens_to_ids(processor.image_token)]
+        for image_token_id in image_tokens:
+            labels[labels == image_token_id] = -100
+        batch["labels"] = labels
+
+        return batch
 
     return collate_fn
 
@@ -162,7 +174,8 @@ def main(script_args, training_args, model_args):
         training_args.gradient_checkpointing_kwargs = dict(use_reentrant=False)
         training_args.remove_unused_columns = False
         training_args.dataset_kwargs = {"skip_prepare_dataset": True}
-        
+        training_args.ddp_find_unused_parameters = True
+
         # Load processor and model for VLM
         processor = get_processor(model_args, training_args)
         model = get_model(model_args, training_args)  # This should return AutoModelForVision2Seq
