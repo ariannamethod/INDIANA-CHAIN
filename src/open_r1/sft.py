@@ -47,11 +47,13 @@ from open_r1.configs import ScriptArguments, SFTConfig
 from open_r1.utils import get_dataset, get_model, get_tokenizer, get_processor
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
+from transformers import Qwen2VLProcessor
 
 logger = logging.getLogger(__name__)
 
 
-
+from dotenv import load_dotenv
+load_dotenv()
 
 def create_vlm_collate_fn(processor):
     """Create a data collator for VLM training that handles images and text."""
@@ -108,6 +110,7 @@ def create_vlm_collate_fn(processor):
         # The labels are the input_ids, and we mask the padding tokens in the loss computation
         labels = batch["input_ids"].clone()
         labels[labels == processor.tokenizer.pad_token_id] = -100  #
+
         # Ignore the image token index in the loss computation (model specific)
         if isinstance(processor, Qwen2VLProcessor):
             logger.info("DETECTED PROCESSOR")
@@ -265,7 +268,7 @@ def main(script_args, training_args, model_args):
     #############
     if training_args.push_to_hub:
         logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+        trainer.push_to_hub(**kwargs, token=os.getenv("HF_TOKEN"))
         # Also push processor for VLM models
         if training_args.vision_model and trainer.accelerator.is_main_process:
             processor.push_to_hub(training_args.hub_model_id)
