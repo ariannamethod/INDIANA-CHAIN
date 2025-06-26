@@ -56,5 +56,12 @@ dataset_mixture:
         - images              
         - texts    
       weight: 1.             # Fraction of dataset to use
+    - id: smolagents/aguvis-stage-2
+      config: guiact-web-multi
+      split: train
+      columns:
+        - images
+        - texts
+      weight: 1.
   seed: 42                      # Seed for shuffling the combined dataset
   test_split_size: 0.1   
