@@ -66,7 +66,7 @@ uv venv openr1 --python 3.11 && source openr1/bin/activate && uv pip install --u
 > [!TIP]
 > For Hugging Face cluster users, add `export UV_LINK_MODE=copy` to your `.bashrc` to suppress cache warnings from `uv`
 
-Next, install vLLM and FlashAttention (use version 2.7.4.post1 to avoid ABI mismatches):
+Next, install vLLM and FlashAttention (use Flash Attention `v2.7.4.post1` to avoid ABI mismatches):
 
 ```shell
 uv pip install vllm==0.8.5.post1
