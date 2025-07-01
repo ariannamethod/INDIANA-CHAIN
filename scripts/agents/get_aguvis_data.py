@@ -356,13 +356,13 @@ def convert_to_chat_format(data_item: Dict[str, Any]) -> List[Dict[str, Any]]:
     return chat_messages
 
 
-def process_split(config: Dict[str, Any], dataset_path: str, destination_path: str) -> Callable:
-    """Process a single dataset split."""
+def process_subset(config: Dict[str, Any], dataset_path: str, destination_path: str, override_existing: bool = False) -> Callable:
+    """Process a single dataset subset."""
     subset_name = config['subset_name']
     repo_id = "smolagents/aguvis-stage-2"
 
     # Check if the subset already exists in the remote dataset
-    if check_subset_exists(repo_id, subset_name):
+    if check_subset_exists(repo_id, subset_name) and not override_existing:
         print(f"Subset '{subset_name}' already exists in {repo_id}, skipping processing.")
         return None
 
@@ -456,9 +456,9 @@ def main():
     for config in dataset_configs:
         print(f"\n{'=' * 50}")
         print(config)
-        process_items = process_split(config, dataset_path, f"{config['subset_name']}")
+        process_items = process_subset(config, dataset_path, f"{config['subset_name']}", override_existing=True)
         
-        # Skip if process_split returned None (subset already exists)
+        # Skip if process_subset returned None (subset already exists)
         if process_items is None:
             continue
             
