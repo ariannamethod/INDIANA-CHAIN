@@ -396,32 +396,32 @@ def process_split(config: Dict[str, Any], dataset_path: str, destination_path: s
             print(f"Error getting image weight: {e}", images_folder, image_paths)
             return 0
 
-    processed_data = []
-    current_weight = 0
-    shard_number = 0
-    MAX_WEIGHT = 1000 * 1024 * 1024
 
     def process_items() -> Generator[Dict[str, Any], None, None]:
         pbar = tqdm(data)
         for item in pbar:
             # Extract image paths from the data item
-            image_paths = []
-            if "images" in item:
-                image_paths = (
-                    item["images"]
-                    if isinstance(item["images"], list)
-                    else [item["images"]]
-                )
-            elif "image" in item:
-                image_paths = [item["image"]]
+            try:
+                image_paths = []
+                if "images" in item:
+                    image_paths = (
+                        item["images"]
+                        if isinstance(item["images"], list)
+                        else [item["images"]]
+                    )
+                elif "image" in item:
+                    image_paths = [item["image"]]
 
-            # Load images
-            images = load_images_from_folder(images_folder, image_paths)
+                # Load images
+                images = load_images_from_folder(images_folder, image_paths)
 
-            texts = convert_to_chat_format(item)
+                texts = convert_to_chat_format(item)
 
-            entry = {"images": images, "texts": texts}
-            yield entry
+                entry = {"images": images, "texts": texts}
+                yield entry
+            except Exception as e:
+                print(f"Error processing item: {e}", item)
+                continue
     return process_items
 
 
