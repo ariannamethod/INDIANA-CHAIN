@@ -74,6 +74,10 @@ class ScriptArguments(trl.ScriptArguments):
         default=None,
         metadata={"help": "Configuration for creating dataset mixtures with advanced options like shuffling."},
     )
+    single_gpu: bool = field(
+        default=False,
+        metadata={"help": "Force training on single GPU only, disabling distributed training."},
+    )
 
     def __post_init__(self):
         if self.dataset_name is None and self.dataset_mixture is None:

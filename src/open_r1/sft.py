@@ -47,11 +47,12 @@ from open_r1.configs import ScriptArguments, SFTConfig
 from open_r1.utils import get_dataset, get_model, get_tokenizer, get_processor
 from open_r1.utils.callbacks import get_callbacks
 from open_r1.utils.wandb_logging import init_wandb_training
+from transformers import Qwen2VLProcessor
 
 logger = logging.getLogger(__name__)
 
-
-
+from dotenv import load_dotenv
+load_dotenv()
 
 def create_vlm_collate_fn(processor):
     """Create a data collator for VLM training that handles images and text."""
@@ -94,23 +95,45 @@ def create_vlm_collate_fn(processor):
             texts.append(text)
             
             # Extract vision info
-            image_inputs, video_inputs = process_vision_info(messages)
+            image_inputs, _ = process_vision_info(messages)
             all_image_inputs.extend(image_inputs if image_inputs else [])
-            all_video_inputs.extend(video_inputs if video_inputs else [])
 
         # Process the batch
         batch = processor(
             text=texts,
             images=all_image_inputs if all_image_inputs else None,
-            videos=all_video_inputs if all_video_inputs else None,
             padding=True,
             return_tensors="pt"
         )
-        return batch.to("cuda")
+
+        # The labels are the input_ids, and we mask the padding tokens in the loss computation
+        labels = batch["input_ids"].clone()
+        labels[labels == processor.tokenizer.pad_token_id] = -100  #
+
+        # Ignore the image token index in the loss computation (model specific)
+        if isinstance(processor, Qwen2VLProcessor):
+            logger.info("DETECTED PROCESSOR")
+            image_tokens = [151652,151653,151655]
+        else: 
+            image_tokens = [processor.tokenizer.convert_tokens_to_ids(processor.image_token)]
+        for image_token_id in image_tokens:
+            labels[labels == image_token_id] = -100
+        batch["labels"] = labels
+
+        return batch
 
     return collate_fn
 
+>>>>>>> f6b8f7cafdeae947e43bcf7f98cc71e63fba7d5d
 def main(script_args, training_args, model_args):
+    # Force single GPU mode if requested
+    # if hasattr(script_args, 'single_gpu') and script_args.single_gpu:
+    #     logger.info("Single GPU mode requested - setting CUDA_VISIBLE_DEVICES=0")
+    #     # Disable distributed training
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # training_args.local_rank = -1
+    # training_args.ddp_backend = None
+
     set_seed(training_args.seed)
 
     ###############
@@ -154,7 +177,8 @@ def main(script_args, training_args, model_args):
         training_args.gradient_checkpointing_kwargs = dict(use_reentrant=False)
         training_args.remove_unused_columns = False
         training_args.dataset_kwargs = {"skip_prepare_dataset": True}
-        
+        training_args.ddp_find_unused_parameters = True
+
         # Load processor and model for VLM
         processor = get_processor(model_args, training_args)
         model = get_model(model_args, training_args)  # This should return AutoModelForVision2Seq
@@ -244,7 +268,7 @@ def main(script_args, training_args, model_args):
     #############
     if training_args.push_to_hub:
         logger.info("Pushing to hub...")
-        trainer.push_to_hub(**kwargs)
+        trainer.push_to_hub(**kwargs, token=os.getenv("HF_TOKEN"))
         # Also push processor for VLM models
         if training_args.vision_model and trainer.accelerator.is_main_process:
             processor.push_to_hub(training_args.hub_model_id)

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=agent-sft
 #SBATCH --ntasks-per-node=1
-#SBATCH --exclusive
+#SBATCH --qos=high
 #SBATCH --gres=gpu:8
 #SBATCH --partition=hopper-prod  # Adjust this for your cluster
 #SBATCH --output=./logs/%x-%j.out
@@ -34,7 +34,7 @@ START_TIME=$(date +%s)
 echo "START TIME: $(date)"
 
 # Refresh Weka on cache
-echo "Refreshing Weka filesystem..."
+# echo "Refreshing Weka filesystem..."
 # find -L /fsx/aymeric/ -type f | xargs -d '\n' -r -n512 -P64 weka fs tier fetch
 
 # Default values
