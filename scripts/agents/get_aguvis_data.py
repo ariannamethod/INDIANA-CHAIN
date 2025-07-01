@@ -26,7 +26,7 @@ import os
 
 api = HfApi()
 
-SYSTEM_PROMPT= """You are a helpful GUI agent.
+SYSTEM_PROMPT= """You are a helpful GUI agent. You will be given a task and a screenshot of the screen. You need to perform a series of function calls in code to complete the task.
 
 When you send a message containing Python code between '<code>' and '</code>' tags, it will be executed in a stateful Jupyter notebook environment, and you will then be given the output to continued reasoning in an agentic loop.
 
