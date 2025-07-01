@@ -1,5 +1,7 @@
 from smolagents.models import get_clean_message_list
-
+from datasets import load_dataset
+from dotenv import load_dotenv
+import os
 
 SYSTEM_PROMPT= """You are a helpful GUI agent.
 
@@ -89,6 +91,37 @@ def wait(seconds: float) -> str:
 The state persists between code executions: so if in one step you've created variables or imported modules, these will all persist.
 """
 
+def convert_to_smolagents(messages):
+    output_messages = [{
+        "content": SYSTEM_PROMPT,
+        "role": "system"
+    }]
+    previous_role = None
+    for i in range(1, len(messages)):
+        content = messages[i]["content"]
+
+        # Convert the format for content
+        content = content.replace("answer(", "final_answer(")
+
+        if messages[i]["role"] == "assistant":
+            if content.startswith("Action: "):
+                content = content.replace("Action: ", "<think>\n").strip()
+                content += "\n</think>\n"
+            else:
+                content = "<code>\n" + content.replace("pyautogui.", "").strip() + "\n</code>"
+
+        messages[i]["content"] = content
+
+        # Fuse subsequent messages if they are both assistants
+        if messages[i]["role"] == "assistant" and messages[i-1]["role"] == "assistant":
+            # Need to fuse both messages
+            output_messages[-1]["content"] += messages[i]["content"]
+        else:
+            output_messages.append(messages[i])
+    return output_messages
+
+
+
 def test_conversion():
     origin = [
     {
@@ -108,8 +141,9 @@ def test_conversion():
         "role": "assistant"
     }
     ]
-    converted = apply_conversion(origin)
-    assert converted == [
+    converted = convert_to_smolagents(origin)
+    print("CONVERTED:\n", converted)
+    expected_messages = [
     {
         "content": SYSTEM_PROMPT,
         "role": "system"
@@ -119,10 +153,21 @@ def test_conversion():
         "role": "user"
     },
     {
-        "content": "<code>final_answer(\"The answer is 'Judith Lauand was a Brazilian painter who was born in 1922.\\nNumerous key galleries and museums such as MASP, Museu de Arte de São Paulo have featured Judith Lauand's work in the past.\\nJudith Lauand's work has been offered at auction multiple times, with realized prices ranging from 515 USD to 87,500 USD, depending on the size and medium of the artwork. Since 2011 the record price for this artist at auction is 87,500 USD for Composition on Red Background, sold at Christie's New York in 2015.'\n\")</code>",
+        "content": "<think>The answer is 'Judith Lauand was a Brazilian painter who was born in 1922.\\nNumerous key galleries and museums such as MASP, Museu de Arte de São Paulo have featured Judith Lauand's work in the past.\\nJudith Lauand's work has been offered at auction multiple times, with realized prices ranging from 515 USD to 87,500 USD, depending on the size and medium of the artwork. Since 2011 the record price for this artist at auction is 87,500 USD for Composition on Red Background, sold at Christie's New York in 2015.'\n</think>\n<code>\nfinal_answer(\"The answer is 'Judith Lauand was a Brazilian painter who was born in 1922.\\nNumerous key galleries and museums such as MASP, Museu de Arte de São Paulo have featured Judith Lauand's work in the past.\\nJudith Lauand's work has been offered at auction multiple times, with realized prices ranging from 515 USD to 87,500 USD, depending on the size and medium of the artwork. Since 2011 the record price for this artist at auction is 87,500 USD for Composition on Red Background, sold at Christie's New York in 2015.'\n\")\n</code>",
         "role": "assistant"
     },
     ]
+    for i, message in enumerate(converted):
+        if not message == expected_messages[i]:
+            print(f"Message {i} is not equal to expected message")
+            print(f"Expected: {expected_messages[i]}")
+            print(f"Actual: {message}")
+            return False
+    return True
 
 if __name__ == "__main__":
-    test_conversion()
+    load_dotenv()
+    assert os.getenv("HF_TOKEN") is not None
+    dataset = load_dataset("smolagents/aguvis-stage-2", "mind2web")
+    dataset = dataset.map(convert_to_smolagents)
+    dataset.push_to_hub("smolagents/aguvis-stage-2-smolagents", "mind2web")
