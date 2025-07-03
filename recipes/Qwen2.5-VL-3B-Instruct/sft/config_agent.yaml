@@ -17,7 +17,7 @@ optim: adamw_torch
 lr_scheduler_type: linear
 warmup_ratio: 0.1
 learning_rate: 2.0e-05
-gradient_accumulation_steps: 2
+gradient_accumulation_steps: 8
 per_device_eval_batch_size: 4
 per_device_train_batch_size: 4 # Change this depending on the context length of the model to keep a 500M GBS. 
 
@@ -58,6 +58,13 @@ dataset_mixture:
       weight: 1.             # Fraction of dataset to use
     - id: smolagents/aguvis-stage-2
       config: guiact-web-multi
+      split: train
+      columns:
+        - images
+        - texts
+      weight: 1.
+    - id: smolagents/aguvis-stage-2
+      config: guiact-web-single
       split: train
       columns:
         - images
