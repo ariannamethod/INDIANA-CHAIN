@@ -124,7 +124,6 @@ def create_vlm_collate_fn(processor):
 
     return collate_fn
 
->>>>>>> f6b8f7cafdeae947e43bcf7f98cc71e63fba7d5d
 def main(script_args, training_args, model_args):
     # Force single GPU mode if requested
     # if hasattr(script_args, 'single_gpu') and script_args.single_gpu:
