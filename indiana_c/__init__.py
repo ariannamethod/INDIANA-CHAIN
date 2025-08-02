@@ -1,4 +1,4 @@
-from .generation import CORE_PROMPT, generate_text
+from .generation import CORE_PROMPT, generate_text, reason_loop
 from .reflection import reflect
 from .model import IndianaC, IndianaCConfig
 from .monitor import SelfMonitor
@@ -13,6 +13,7 @@ __all__ = [
     "IndianaC",
     "IndianaCConfig",
     "generate_text",
+    "reason_loop",
     "reflect",
     "quantize_2bit",
     "SelfMonitor",
