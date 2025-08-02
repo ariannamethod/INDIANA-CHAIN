@@ -55,14 +55,16 @@ def generate_with_think(
     """Generate text while allowing a hook for reasoning steps.
 
     Currently this is a light wrapper around :func:`generate_text` so that it can
-    be mocked in tests and extended in the future.
+    be mocked in tests and extended in the future. The function requests
+    reasoning metadata from :func:`generate_text` and therefore returns a tuple
+    of the generated text and the associated statistics.
     """
 
     return generate_text(
         prompt,
         max_new_tokens=max_new_tokens,
         config=config,
-        log_reasoning=False,
+        log_reasoning=True,
     )
 
 
