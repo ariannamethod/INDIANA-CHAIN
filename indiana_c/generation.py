@@ -77,6 +77,64 @@ def generate_text(
     return text
 
 
+def reason_loop(
+    prompt: str | None = None,
+    *,
+    max_steps: int = 5,
+    stop_tokens: tuple[str, ...] = ("</think>", "</answer>"),
+    max_new_tokens: int = 50,
+    config: IndianaCConfig | None = None,
+) -> str:
+    """Iteratively alternate between ``<think>`` and ``<answer>`` phases.
+
+    At each step the model first produces a thought and then an answer. Each
+    intermediate piece of text is logged via :class:`SelfMonitor` before
+    optionally continuing to the next step.
+
+    Args:
+        prompt: Initial prompt to seed the loop. If ``None`` the core prompt is
+            used.
+        max_steps: Maximum number of ``<think>``/``<answer>`` pairs to run.
+        stop_tokens: Collection of substrings that, if generated, terminate the
+            loop early.
+        max_new_tokens: Maximum tokens to generate per phase.
+        config: Optional model configuration.
+
+    Returns:
+        The text produced in the final ``<answer>`` phase or the accumulated
+        text if the loop exits early before producing an answer.
+    """
+
+    prompt = prompt or CORE_PROMPT
+    config = config or IndianaCConfig()
+    monitor = SelfMonitor()
+    model = IndianaC(config)
+    quantize_2bit(model)
+    model.eval()
+    text = prompt
+    final_answer = ""
+    for _ in range(max_steps):
+        think_prompt = f"{text}\n<think>"
+        idx = tokenizer.encode(think_prompt)
+        out = model.generate(idx, max_new_tokens=max_new_tokens)
+        new_tokens = out[:, idx.shape[1] :]
+        thought = tokenizer.decode(new_tokens)
+        monitor.log("<think>", thought)
+        text = tokenizer.decode(out[0])
+        if any(tok in thought for tok in stop_tokens):
+            break
+        answer_prompt = f"{text}\n<answer>"
+        idx = tokenizer.encode(answer_prompt)
+        out = model.generate(idx, max_new_tokens=max_new_tokens)
+        new_tokens = out[:, idx.shape[1] :]
+        final_answer = tokenizer.decode(new_tokens)
+        monitor.log("<answer>", final_answer)
+        text = tokenizer.decode(out[0])
+        if any(tok in final_answer for tok in stop_tokens):
+            break
+    return final_answer or text
+
+
 def generate_with_think(
     prompt: str | None = None,
     max_new_tokens: int = 50,

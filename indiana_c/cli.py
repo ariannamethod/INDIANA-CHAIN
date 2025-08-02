@@ -1,6 +1,6 @@
 import argparse
 
-from .generation import generate_consistent_text, generate_text
+from .generation import generate_consistent_text, generate_text, reason_loop
 from .model import IndianaCConfig
 
 
@@ -20,10 +20,28 @@ def main() -> None:
         action="store_true",
         help="enable self-verification through reflection",
     )
+    parser.add_argument("--max-steps", type=int, default=0, help="max reasoning steps")
+    parser.add_argument(
+        "--stop-token",
+        action="append",
+        default=[],
+        help="token that halts the reasoning loop; can be used multiple times",
+    )
     args = parser.parse_args()
 
     config = IndianaCConfig(vocab_size=256)
-    if args.consistency > 1:
+    if args.max_steps or args.stop_token:
+        loop_kwargs: dict[str, object] = {
+            "max_new_tokens": args.max_new_tokens,
+            "config": config,
+        }
+        if args.max_steps:
+            loop_kwargs["max_steps"] = args.max_steps
+        if args.stop_token:
+            loop_kwargs["stop_tokens"] = tuple(args.stop_token)
+        result = reason_loop(args.prompt, **loop_kwargs)
+        print(result)
+    elif args.consistency > 1:
         result = generate_consistent_text(
             args.prompt,
             n=args.consistency,

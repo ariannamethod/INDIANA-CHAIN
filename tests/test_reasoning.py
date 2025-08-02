@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from indiana_c.generation import generate_consistent_text, generate_with_think
+import torch
+
+from indiana_c.generation import generate_consistent_text, generate_with_think, reason_loop
+from indiana_c.tokenizer import tokenizer
 
 
 def test_generate_with_think_returns_thought_and_final() -> None:
@@ -33,3 +36,34 @@ def test_consistency_improves_with_multiple_attempts() -> None:
 
     assert single != "A"
     assert multi == "A"
+
+
+def test_reason_loop_alternates_and_logs() -> None:
+    """The reasoning loop should log intermediate thoughts and answers."""
+
+    class DummyModel:
+        def __init__(self, *args, **kwargs) -> None:
+            self.calls = 0
+
+        def eval(self) -> None:  # pragma: no cover - simple stub
+            pass
+
+        def generate(self, idx, max_new_tokens):  # pragma: no cover - simple stub
+            self.calls += 1
+            if self.calls % 2:
+                addition = tokenizer.encode(" thought")
+            else:
+                addition = tokenizer.encode(" answer")
+            return torch.cat([idx, addition], dim=1)
+
+    with (
+        patch("indiana_c.generation.IndianaC", DummyModel),
+        patch("indiana_c.generation.quantize_2bit", lambda _: None),
+        patch("indiana_c.generation.SelfMonitor.__init__", return_value=None),
+        patch("indiana_c.generation.SelfMonitor.log") as mock_log,
+    ):
+        result = reason_loop("Q", max_steps=1)
+
+    assert isinstance(result, str)
+    assert mock_log.call_args_list[0][0][0] == "<think>"
+    assert mock_log.call_args_list[1][0][0] == "<answer>"
