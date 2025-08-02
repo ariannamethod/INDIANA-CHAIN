@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 
 import torch
@@ -46,3 +47,54 @@ def generate_text(
     if log_reasoning:
         return text, {"complexity": record.complexity, "entropy": record.entropy, "timestamp": record.timestamp}
     return text
+
+
+def generate_with_think(
+    prompt: str | None = None,
+    max_new_tokens: int = 50,
+    config: IndianaCConfig | None = None,
+) -> str | tuple[str, dict[str, float | int]]:
+    """Generate text while allowing a hook for reasoning steps.
+
+    Currently this is a light wrapper around :func:`generate_text` so that it can
+    be mocked in tests and extended in the future.
+    """
+
+    return generate_text(
+        prompt,
+        max_new_tokens=max_new_tokens,
+        config=config,
+        log_reasoning=False,
+    )
+
+
+def generate_consistent_text(
+    prompt: str | None = None,
+    n: int = 5,
+    **kwargs,
+) -> str:
+    """Generate multiple completions and return the most consistent answer.
+
+    Args:
+        prompt: Optional prompt to complete. If ``None`` the core prompt is used.
+        n: Number of attempts to generate a completion.
+        **kwargs: Extra arguments passed to :func:`generate_with_think`.
+
+    Returns:
+        The most frequently produced final answer. In case of a tie, the
+        shortest answer is returned.
+    """
+
+    prompt = prompt or CORE_PROMPT
+    results: list[str] = []
+    for _ in range(n):
+        output = generate_with_think(prompt, **kwargs)
+        final = output[-1] if isinstance(output, tuple) else output
+        results.append(final)
+
+    counts = Counter(results)
+    most_common_answer, freq = counts.most_common(1)[0]
+    tied = [ans for ans, c in counts.items() if c == freq]
+    if len(tied) > 1:
+        most_common_answer = min(tied, key=len)
+    return most_common_answer
