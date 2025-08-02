@@ -20,6 +20,11 @@ def main() -> None:
         action="store_true",
         help="enable self-verification through reflection",
     )
+    parser.add_argument(
+        "--use-memory",
+        action="store_true",
+        help="prepend similar past prompts from memory",
+    )
     parser.add_argument("--max-steps", type=int, default=0, help="max reasoning steps")
     parser.add_argument(
         "--stop-token",
@@ -48,6 +53,7 @@ def main() -> None:
             max_new_tokens=args.max_new_tokens,
             config=config,
             self_reflect=args.reflect,
+            use_memory=args.use_memory,
         )
         print(result)
     else:
@@ -57,6 +63,7 @@ def main() -> None:
             config=config,
             log_reasoning=args.verbose,
             self_reflect=args.reflect,
+            use_memory=args.use_memory,
         )
         if args.verbose:
             text, meta = result

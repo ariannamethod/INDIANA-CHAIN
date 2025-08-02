@@ -27,7 +27,7 @@ class SelfMonitor:
             "CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, content BLOB, sha256 TEXT)"
         )
         cur.execute(
-            "CREATE TABLE IF NOT EXISTS logs(ts REAL, prompt TEXT, output TEXT)"
+            "CREATE TABLE IF NOT EXISTS logs(ts REAL, prompt TEXT, output TEXT, sha256 TEXT)"
         )
         cur.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS prompts_index USING fts5(prompt, output)"
@@ -53,10 +53,11 @@ class SelfMonitor:
 
     def log(self, prompt: str, output: str) -> None:
         """Log a generation event with timestamp."""
+        sha = hashlib.sha256(prompt.encode()).hexdigest()
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO logs(ts, prompt, output) VALUES (?,?,?)",
-            (time.time(), prompt, output),
+            "INSERT INTO logs(ts, prompt, output, sha256) VALUES (?,?,?,?)",
+            (time.time(), prompt, output, sha),
         )
         cur.execute(
             "INSERT INTO prompts_index(prompt, output) VALUES (?,?)",
@@ -64,8 +65,7 @@ class SelfMonitor:
         )
         self.conn.commit()
 
-    def search_prompts(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
-        """Search previously logged prompts similar to the query."""
+    def _search_tfidf(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
         cur = self.conn.cursor()
         cur.execute(
             "SELECT prompt, output FROM prompts_index WHERE prompts_index MATCH ? "
@@ -73,6 +73,27 @@ class SelfMonitor:
             (query, limit),
         )
         return cur.fetchall()
+
+    def search(self, prompt: str, limit: int = 5) -> list[tuple[str, str]]:
+        """Return top-k similar prompt/output pairs.
+
+        Exact SHA-256 matches are preferred; otherwise a TF-IDF lookup is used.
+        """
+
+        sha = hashlib.sha256(prompt.encode()).hexdigest()
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT prompt, output FROM logs WHERE sha256 = ? LIMIT ?",
+            (sha, limit),
+        )
+        rows = cur.fetchall()
+        if rows:
+            return rows
+        return self._search_tfidf(prompt, limit=limit)
+
+    def search_prompts(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
+        """Search previously logged prompts similar to the query."""
+        return self._search_tfidf(query, limit=limit)
 
 
 __all__ = ["SelfMonitor"]
