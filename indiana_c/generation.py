@@ -36,3 +36,30 @@ def generate_text(
     text = decode(out[0])
     monitor.log(prompt, text)
     return text
+
+
+def generate_with_think(
+    prompt: str | None = None,
+    max_new_tokens: int = 50,
+    config: IndianaCConfig | None = None,
+) -> tuple[str, str]:
+    prompt = prompt or CORE_PROMPT
+    config = config or IndianaCConfig()
+    model = IndianaC(config)
+    quantize_2bit(model)
+    monitor = SelfMonitor()
+    model.eval()
+    full_prompt = f"{prompt} <think>"
+    idx = encode(full_prompt, config.vocab_size)
+    out = model.generate(idx, max_new_tokens=max_new_tokens)
+    text = decode(out[0])
+    monitor.log(full_prompt, text)
+    if "</think>" in text:
+        start = text.find("<think>") + len("<think>")
+        end = text.find("</think>")
+        thoughts = text[start:end].strip()
+        final_answer = text[end + len("</think>") :].strip()
+    else:
+        thoughts = ""
+        final_answer = text
+    return thoughts, final_answer
