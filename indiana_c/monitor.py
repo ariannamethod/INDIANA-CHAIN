@@ -68,7 +68,8 @@ class SelfMonitor:
         """Search previously logged prompts similar to the query."""
         cur = self.conn.cursor()
         cur.execute(
-            "SELECT prompt, output FROM prompts_index WHERE prompts_index MATCH ? LIMIT ?",
+            "SELECT prompt, output FROM prompts_index WHERE prompts_index MATCH ? "
+            "ORDER BY bm25(prompts_index) LIMIT ?",
             (query, limit),
         )
         return cur.fetchall()
