@@ -1,14 +1,19 @@
+import base64
+import os
 import subprocess
 from typing import TYPE_CHECKING, Dict, Union
 
-from .hub import get_gpu_count_for_vllm, get_param_count_from_repo_id
+
+def get_gpu_count_for_vllm(*args, **kwargs) -> int:
+    return 1
+
+
+def get_param_count_from_repo_id(*args, **kwargs) -> int:
+    return 0
 
 
 if TYPE_CHECKING:
-    from trl import GRPOConfig, SFTConfig, ModelConfig
-
-import base64
-import os
+    from trl import GRPOConfig, ModelConfig, SFTConfig
 
 
 # We need a special environment setup to launch vLLM from within Slurm training jobs.
