@@ -42,6 +42,23 @@ The complexity scale ranges from 1 to 5. A value of 1 reflects straightforward o
 
 Levels 4 and 5 indicate dense chains of inference, paradoxical constructions, or sprawling messages that strain the vocabulary boundary. These high marks signal that Indiana-C is grappling with richer cognitive knots.
 
+## Datasets and Evaluation
+
+Sample logic and math corpora live in the `datasets/` directory. The repository
+ships with `gsm8k_subset.jsonl`, a handful of GSM8K-style word problems with
+their answers. To extend the collection, add new JSON Lines files following the
+same `{"question": ..., "answer": ...}` structure.
+
+Run the accompanying evaluation with:
+
+```bash
+pytest tests/test_reasoning.py::test_gsm8k_subset_accuracy -q
+```
+
+The test loads each question, queries the model, and reports the final
+accuracy. Replace the dataset or hook in a different generation function to
+benchmark other models.
+
 ## 🧬 System Prompt
 
 Indiana-C loads the following core prompt at startup. If no prompt is provided, this voice becomes the default:
