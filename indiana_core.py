@@ -28,6 +28,28 @@ from indiana_c.reflection import reflect
 
 
 # ---------------------------------------------------------------------------
+# Shared monitor instance
+# ---------------------------------------------------------------------------
+
+_monitor_instance: SelfMonitor | None = None
+
+
+def get_monitor() -> SelfMonitor:
+    """Return a shared :class:`SelfMonitor` instance.
+
+    The monitor is lazily instantiated so that tests can patch ``SelfMonitor``
+    before first use.  If the ``SelfMonitor`` class is swapped out (e.g. via
+    monkeypatching), a new instance of the updated class will be created on the
+    next call.
+    """
+
+    global _monitor_instance
+    if _monitor_instance is None or not isinstance(_monitor_instance, SelfMonitor):
+        _monitor_instance = SelfMonitor()
+    return _monitor_instance
+
+
+# ---------------------------------------------------------------------------
 # Prompt loading
 # ---------------------------------------------------------------------------
 
@@ -146,12 +168,13 @@ def generate_text(
     use_memory: bool = False,
     memory_limit: int = 3,
     self_reflect: bool = False,
+    monitor: SelfMonitor | None = None,
 ) -> str | tuple[str, dict[str, float | int]]:
     """Generate a completion optionally enriched with past prompts."""
 
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
-    monitor = SelfMonitor()
+    monitor = monitor or get_monitor()
     if use_memory:
         examples = monitor.search(prompt, limit=memory_limit)
         if examples:
@@ -193,12 +216,13 @@ def reason_loop(
     stop_tokens: tuple[str, ...] = ("</think>", "</answer>"),
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
+    monitor: SelfMonitor | None = None,
 ) -> str:
     """Iteratively alternate between ``<think>`` and ``<answer>`` phases."""
 
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
-    monitor = SelfMonitor()
+    monitor = monitor or get_monitor()
     model = IndianaC(config)
     quantize_2bit(model)
     model.eval()
@@ -230,10 +254,14 @@ def generate_with_think(
     prompt: str | None = None,
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
+    *,
+    monitor: SelfMonitor | None = None,
     **kwargs,
 ) -> str | tuple[str, dict[str, float | int]]:
     """Generate text while requesting reasoning metadata."""
 
+    if monitor is not None:
+        kwargs["monitor"] = monitor
     return generate_text(
         prompt,
         max_new_tokens=max_new_tokens,
@@ -246,6 +274,8 @@ def generate_with_think(
 def generate_consistent_text(
     prompt: str | None = None,
     n: int = 5,
+    *,
+    monitor: SelfMonitor | None = None,
     **kwargs,
 ) -> str:
     """Generate ``n`` completions and return the most frequent answer."""
@@ -253,7 +283,7 @@ def generate_consistent_text(
     prompt = prompt or CORE_PROMPT
     results: list[str] = []
     for _ in range(n):
-        output = generate_with_think(prompt, **kwargs)
+        output = generate_with_think(prompt, monitor=monitor, **kwargs)
         final = output[-1] if isinstance(output, tuple) else output
         results.append(final)
 
@@ -277,4 +307,5 @@ __all__ = [
     "ThoughtComplexityLogger",
     "estimate_complexity_and_entropy",
     "thought_logger",
+    "get_monitor",
 ]
