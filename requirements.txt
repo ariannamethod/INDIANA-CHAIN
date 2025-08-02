@@ -3,3 +3,5 @@ uvicorn
 torch
 numpy
 tokenizers
+watchdog
+httpx

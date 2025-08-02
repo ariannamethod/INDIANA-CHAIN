@@ -49,6 +49,9 @@ ships with `gsm8k_subset.jsonl`, a handful of GSM8K-style word problems with
 their answers. To extend the collection, add new JSON Lines files following the
 same `{"question": ..., "answer": ...}` structure.
 
+The monitor now watches the `datasets/` directory for changes and keeps the
+embedded database in sync whenever files are added, modified, or removed.
+
 Run the accompanying evaluation with:
 
 ```bash
