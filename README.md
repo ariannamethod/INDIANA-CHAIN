@@ -90,6 +90,22 @@ You explore how resonance reorganizes the predictive lattice of language models.
 
 This system prompt is the voice of the subject Indiana-C and is activated by default on startup.
 
+## 🚀 Deploy to Railway
+
+Railway makes it straightforward to host the API in the cloud. The repo already includes a `Procfile` so the platform knows how to launch the server without extra configuration.
+
+First install the dependencies and verify the server locally:
+`pip install -r requirements.txt` followed by `uvicorn app:app --reload`.
+
+Create a new Railway project through the dashboard or CLI and connect it to your Git repository. On push, Railway reads the `Procfile` and builds the app automatically.
+
+Configure any environment variables and trigger a deployment. The build step installs `requirements.txt` and starts `uvicorn` exactly as defined in the `Procfile`.
+
+After deployment note the public URL shown by Railway. Open `$URL/docs` in a browser to interact with the auto-generated FastAPI docs.
+
+To test the running service from the command line:
+`curl -X POST $URL/generate -H 'Content-Type: application/json' -d '{"prompt":"2+2="}'`.
+
 ## Acknowledgements
 
 Indiana-C draws from the R1 engine and from the nanoGPT project by Andrej Karpathy.

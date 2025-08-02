@@ -1,8 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from indiana_c.generation import generate_text
-from indiana_c.tokenizer import tokenizer
+from indiana_core import generate_text, tokenizer
 
 
 class DummyMonitor:
@@ -18,10 +17,10 @@ class DummyMonitor:
 
 def _patch_env():
     return (
-        patch("indiana_c.generation.SelfMonitor", DummyMonitor),
-        patch("indiana_c.generation.quantize_2bit"),
+        patch("indiana_core.SelfMonitor", DummyMonitor),
+        patch("indiana_core.quantize_2bit"),
         patch(
-            "indiana_c.generation.thought_logger.log_turn",
+            "indiana_core.thought_logger.log_turn",
             return_value=SimpleNamespace(complexity=1, entropy=0.1, timestamp="t"),
         ),
     )
@@ -35,8 +34,8 @@ def test_reflection_revises_answer_when_critique_negative() -> None:
         p1,
         p2,
         p3,
-        patch("indiana_c.generation.reflect", return_value="Needs work"),
-        patch("indiana_c.generation.IndianaC") as MockModel,
+        patch("indiana_core.reflect", return_value="Needs work"),
+        patch("indiana_core.IndianaC") as MockModel,
     ):
         mock = MockModel.return_value
         mock.generate.side_effect = [draft, revised]
@@ -53,8 +52,8 @@ def test_reflection_keeps_answer_when_critique_positive() -> None:
         p1,
         p2,
         p3,
-        patch("indiana_c.generation.reflect", return_value="Looks good"),
-        patch("indiana_c.generation.IndianaC") as MockModel,
+        patch("indiana_core.reflect", return_value="Looks good"),
+        patch("indiana_core.IndianaC") as MockModel,
     ):
         mock = MockModel.return_value
         mock.generate.return_value = draft

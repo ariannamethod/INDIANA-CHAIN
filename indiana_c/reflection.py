@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .model import IndianaC, IndianaCConfig
 from .quantize import quantize_2bit
-from .tokenizer import tokenizer
 
 
 def reflect(prompt: str, draft: str, max_new_tokens: int = 50, config: IndianaCConfig | None = None) -> str:
@@ -26,6 +25,8 @@ def reflect(prompt: str, draft: str, max_new_tokens: int = 50, config: IndianaCC
     model = IndianaC(config)
     quantize_2bit(model)
     model.eval()
+    from indiana_core import tokenizer
+
     idx = tokenizer.encode(critique_prompt)
     out = model.generate(idx, max_new_tokens=max_new_tokens)
     critique = tokenizer.decode(out[0])
