@@ -1,24 +1,19 @@
-import torch
-
 from indiana_c import IndianaC, IndianaCConfig
+from indiana_c.tokenizer import tokenizer
 
 
 def test_forward():
-    config = IndianaCConfig(
-        vocab_size=10, block_size=16, n_layer=2, n_head=2, n_embd=32
-    )
+    config = IndianaCConfig(block_size=16, n_layer=2, n_head=2, n_embd=32)
     model = IndianaC(config)
-    idx = torch.randint(0, config.vocab_size, (1, 4))
+    idx = tokenizer.encode("hello")
     logits, loss = model(idx, idx)
-    assert logits.shape == (1, 4, config.vocab_size)
+    assert logits.shape == (1, idx.shape[1], config.vocab_size)
     assert loss is not None
 
 
 def test_generate():
-    config = IndianaCConfig(
-        vocab_size=10, block_size=16, n_layer=2, n_head=2, n_embd=32
-    )
+    config = IndianaCConfig(block_size=16, n_layer=2, n_head=2, n_embd=32)
     model = IndianaC(config)
-    idx = torch.randint(0, config.vocab_size, (1, 4))
+    idx = tokenizer.encode("hello")
     out = model.generate(idx, max_new_tokens=2)
-    assert out.shape[-1] == 6
+    assert out.shape[-1] == idx.shape[1] + 2
