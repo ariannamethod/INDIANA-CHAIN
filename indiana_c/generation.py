@@ -25,6 +25,21 @@ def generate_text(
     use_history: bool = False,
     history_limit: int = 3,
 ) -> str | tuple[str, dict[str, float | int]]:
+    """Generate a completion optionally enriched with past prompts.
+
+    Args:
+        prompt: Initial text to complete. If ``None`` the core prompt is used.
+        max_new_tokens: Maximum number of tokens to generate.
+        config: Optional model configuration.
+        log_reasoning: Whether to return reasoning metadata.
+        use_history: Fetch similar past prompts from :class:`SelfMonitor` and
+            prepend them to the provided prompt.
+        history_limit: Maximum number of historical prompts to include.
+
+    Returns:
+        The generated text. If ``log_reasoning`` is ``True`` a tuple of the text
+        and a dictionary with reasoning statistics is returned instead.
+    """
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
     monitor = SelfMonitor()
