@@ -17,6 +17,7 @@ class IndianaCConfig:
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
+    quantization_bits: int = 2
 
     def __post_init__(self) -> None:
         if self.vocab_size is None:

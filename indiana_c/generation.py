@@ -3,7 +3,7 @@ from pathlib import Path
 
 from .model import IndianaC, IndianaCConfig
 from .monitor import SelfMonitor
-from .quantize import quantize_2bit
+from .quantize import quantize
 from .logger import (
     estimate_complexity_and_entropy,
     thought_logger,
@@ -51,7 +51,7 @@ def generate_text(
             combined = "\n".join(p for p, _ in history)
             prompt = f"{combined}\n{prompt}"
     model = IndianaC(config)
-    quantize_2bit(model)
+    quantize(model, config.quantization_bits)
     model.eval()
     idx = tokenizer.encode(prompt)
     out = model.generate(idx, max_new_tokens=max_new_tokens)

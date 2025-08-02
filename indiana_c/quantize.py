@@ -1,30 +1,34 @@
-"""2-bit weight quantization for Indiana-C.
-
-The quantization squeezes model parameters to four discrete levels so
-that the model fits on very small devices while keeping the reasoning
-chain intact.
-"""
+"""Weight quantization utilities for Indiana-C."""
 
 from __future__ import annotations
 
 import torch
 from torch import nn
 
+_SUPPORTED_BITS = {2, 4, 8}
+
 
 @torch.no_grad()
-def quantize_2bit(model: nn.Module) -> None:
-    """Quantize the model weights to 2-bit precision in-place."""
+def quantize(model: nn.Module, bits: int) -> None:
+    """Quantize the model weights to the specified bit precision in-place.
+
+    Args:
+        model: The module whose parameters will be quantized.
+        bits: Target bit precision. Supported values are 2, 4 and 8.
+    """
+    if bits not in _SUPPORTED_BITS:
+        raise ValueError(f"Unsupported bit-width: {bits}")
+
+    max_q = 2 ** (bits - 1) - 1
     for param in model.parameters():
         if param.dtype not in (torch.float32, torch.float64):
             continue
         max_val = param.abs().max()
         if max_val == 0:
             continue
-        scale = max_val / 3
-        q = (param / scale).round().clamp(-3, 3)
-        signs = torch.sign(q)
-        mags = torch.where(q.abs() > 2, torch.tensor(3.0, device=param.device), torch.tensor(1.0, device=param.device))
-        param.copy_(signs * mags * scale)
+        scale = max_val / max_q
+        q = (param / scale).round().clamp(-max_q, max_q)
+        param.copy_(q * scale)
 
 
-__all__ = ["quantize_2bit"]
+__all__ = ["quantize"]

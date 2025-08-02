@@ -10,6 +10,13 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=50)
     parser.add_argument("--verbose", action="store_true", help="show reasoning log")
     parser.add_argument(
+        "--precision",
+        type=int,
+        choices=[2, 4, 8],
+        default=2,
+        help="weight quantization precision in bits",
+    )
+    parser.add_argument(
         "--consistency",
         type=int,
         default=1,
@@ -22,7 +29,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = IndianaCConfig(vocab_size=256)
+    config = IndianaCConfig(vocab_size=256, quantization_bits=args.precision)
     if args.consistency > 1:
         result = generate_consistent_text(
             args.prompt,

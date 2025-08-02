@@ -19,7 +19,7 @@ class DummyMonitor:
 def _patch_env():
     return (
         patch("indiana_c.generation.SelfMonitor", DummyMonitor),
-        patch("indiana_c.generation.quantize_2bit"),
+        patch("indiana_c.generation.quantize"),
         patch(
             "indiana_c.generation.thought_logger.log_turn",
             return_value=SimpleNamespace(complexity=1, entropy=0.1, timestamp="t"),
