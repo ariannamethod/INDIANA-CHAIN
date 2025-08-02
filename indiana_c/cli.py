@@ -1,6 +1,6 @@
 import argparse
 
-from .generation import generate_consistent_text, generate_text, reason_loop
+from indiana_core import generate_consistent_text, generate_text, reason_loop
 from .model import IndianaCConfig
 
 
