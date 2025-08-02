@@ -29,6 +29,9 @@ class SelfMonitor:
         cur.execute(
             "CREATE TABLE IF NOT EXISTS logs(ts REAL, prompt TEXT, output TEXT)"
         )
+        cur.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS prompts_index USING fts5(prompt, output)"
+        )
         self.conn.commit()
 
     def snapshot_codebase(self, root: str | Path = ".") -> None:
@@ -55,7 +58,20 @@ class SelfMonitor:
             "INSERT INTO logs(ts, prompt, output) VALUES (?,?,?)",
             (time.time(), prompt, output),
         )
+        cur.execute(
+            "INSERT INTO prompts_index(prompt, output) VALUES (?,?)",
+            (prompt, output),
+        )
         self.conn.commit()
+
+    def search_prompts(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
+        """Search previously logged prompts similar to the query."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT prompt, output FROM prompts_index WHERE prompts_index MATCH ? LIMIT ?",
+            (query, limit),
+        )
+        return cur.fetchall()
 
 
 __all__ = ["SelfMonitor"]
