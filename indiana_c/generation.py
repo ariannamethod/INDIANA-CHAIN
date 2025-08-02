@@ -23,8 +23,8 @@ def generate_text(
     config: IndianaCConfig | None = None,
     *,
     log_reasoning: bool = False,
-    use_history: bool = False,
-    history_limit: int = 3,
+    use_memory: bool = False,
+    memory_limit: int = 3,
     self_reflect: bool = False,
 ) -> str | tuple[str, dict[str, float | int]]:
     """Generate a completion optionally enriched with past prompts.
@@ -34,9 +34,9 @@ def generate_text(
         max_new_tokens: Maximum number of tokens to generate.
         config: Optional model configuration.
         log_reasoning: Whether to return reasoning metadata.
-        use_history: Fetch similar past prompts from :class:`SelfMonitor` and
+        use_memory: Fetch similar past prompts from :class:`SelfMonitor` and
             prepend them to the provided prompt.
-        history_limit: Maximum number of historical prompts to include.
+        memory_limit: Maximum number of historical prompts to include.
 
     Returns:
         The generated text. If ``log_reasoning`` is ``True`` a tuple of the text
@@ -45,10 +45,12 @@ def generate_text(
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
     monitor = SelfMonitor()
-    if use_history:
-        history = monitor.search_prompts(prompt, limit=history_limit)
-        if history:
-            combined = "\n".join(p for p, _ in history)
+    if use_memory:
+        examples = monitor.search(prompt, limit=memory_limit)
+        if examples:
+            combined = "\n".join(
+                f"Prompt: {p}\nOutput: {o}" for p, o in examples
+            )
             prompt = f"{combined}\n{prompt}"
     model = IndianaC(config)
     quantize_2bit(model)
