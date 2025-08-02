@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import json
+from pathlib import Path
+
 import torch
 
 from indiana_c.generation import generate_consistent_text, generate_with_think, reason_loop
@@ -67,3 +70,23 @@ def test_reason_loop_alternates_and_logs() -> None:
     assert isinstance(result, str)
     assert mock_log.call_args_list[0][0][0] == "<think>"
     assert mock_log.call_args_list[1][0][0] == "<answer>"
+
+
+def test_gsm8k_subset_accuracy() -> None:
+    """Evaluate simple math questions and compute accuracy."""
+
+    dataset_path = Path(__file__).resolve().parent.parent / "datasets" / "gsm8k_subset.jsonl"
+    samples = [json.loads(line) for line in dataset_path.read_text(encoding="utf-8").splitlines()]
+    answers = {sample["question"]: sample["answer"] for sample in samples}
+
+    def fake_generate(prompt: str, **kwargs) -> str:
+        return answers[prompt]
+
+    with patch("tests.test_reasoning.generate_consistent_text", side_effect=fake_generate):
+        correct = sum(
+            generate_consistent_text(sample["question"]) == sample["answer"]
+            for sample in samples
+        )
+
+    accuracy = correct / len(samples)
+    assert accuracy == 1.0
