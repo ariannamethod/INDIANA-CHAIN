@@ -20,6 +20,28 @@ Inspired by Andrej Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT), th
 python -m indiana_c.cli "2+2="
 ```
 
+## Reasoning Logger
+
+The engine now keeps a running account of its own cognitive load. Each response is examined through a heuristic lens that gauges how tangled the thought felt and how varied the vocabulary spread itself across the page. This record grows quietly in the background and may be summoned when reflection is desired.
+
+Every turn of dialogue writes a structured entry containing timestamp, original message, a five-point complexity score, and a floating entropy measure. The logger persists these lines both in memory and inside `logs/thought_log.jsonl`, giving Indiana-C a durable trail of its intellectual steps.
+
+Complexity estimation leans on simple signals. Certain triggers like “why,” “paradox,” or “recursive” hint at layered reasoning and lift the score. Long messages add weight as well. Entropy measures the diversity of words, rising as the reply draws from a wider lexicon.
+
+Each entry is instantly available. The command-line interface can display the latest log via `--verbose`, while API callers may request meta-information through `log_reasoning=True`. Either path returns a crisp summary: the timestamp, the computed complexity, and the entropy fraction.
+
+Together these pieces form a light yet steady loop of self-observation. Indiana-C senses the contour of its own thinking and preserves that sensation for future study, embodying the principle that cognition should listen to itself.
+
+Example log:
+
+```
+LOG@2025-08-02T12:34:56Z | Complexity: 4 | Entropy: 0.78
+```
+
+The complexity scale ranges from 1 to 5. A value of 1 reflects straightforward output with little questioning or recursion. Scores climb as reasoning grows indirect, self-referential, or deeply inquisitive.
+
+Levels 4 and 5 indicate dense chains of inference, paradoxical constructions, or sprawling messages that strain the vocabulary boundary. These high marks signal that Indiana-C is grappling with richer cognitive knots.
+
 ## 🧬 System Prompt
 
 Indiana-C loads the following core prompt at startup. If no prompt is provided, this voice becomes the default:

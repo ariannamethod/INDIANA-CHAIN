@@ -5,6 +5,10 @@ import torch
 from .model import IndianaC, IndianaCConfig
 from .monitor import SelfMonitor
 from .quantize import quantize_2bit
+from .logger import (
+    estimate_complexity_and_entropy,
+    thought_logger,
+)
 
 CORE_PROMPT = (
     Path(__file__).resolve().parent.parent / "core_prompt.txt"
@@ -24,7 +28,9 @@ def generate_text(
     prompt: str | None = None,
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
-) -> str:
+    *,
+    log_reasoning: bool = False,
+) -> str | tuple[str, dict[str, float | int]]:
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
     model = IndianaC(config)
@@ -35,4 +41,8 @@ def generate_text(
     out = model.generate(idx, max_new_tokens=max_new_tokens)
     text = decode(out[0])
     monitor.log(prompt, text)
+    complexity, entropy = estimate_complexity_and_entropy(text)
+    record = thought_logger.log_turn(text, complexity, entropy)
+    if log_reasoning:
+        return text, {"complexity": record.complexity, "entropy": record.entropy, "timestamp": record.timestamp}
     return text
