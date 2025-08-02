@@ -30,12 +30,19 @@ def generate_text(
     config: IndianaCConfig | None = None,
     *,
     log_reasoning: bool = False,
+    use_history: bool = False,
+    history_limit: int = 3,
 ) -> str | tuple[str, dict[str, float | int]]:
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
+    monitor = SelfMonitor()
+    if use_history:
+        history = monitor.search_prompts(prompt, limit=history_limit)
+        if history:
+            combined = "\n".join(p for p, _ in history)
+            prompt = f"{combined}\n{prompt}"
     model = IndianaC(config)
     quantize_2bit(model)
-    monitor = SelfMonitor()
     model.eval()
     idx = encode(prompt, config.vocab_size)
     out = model.generate(idx, max_new_tokens=max_new_tokens)
