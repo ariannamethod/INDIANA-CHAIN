@@ -1,8 +1,15 @@
+from pathlib import Path
+
 import torch
 
 from .model import IndianaC, IndianaCConfig
 from .monitor import SelfMonitor
 from .quantize import quantize_2bit
+
+CORE_PROMPT = (
+    Path(__file__).resolve().parent.parent / "core_prompt.txt"
+).read_text(encoding="utf-8")
+print("core_prompt.txt loaded [OK]")
 
 
 def encode(text: str, vocab_size: int) -> torch.Tensor:
@@ -14,10 +21,11 @@ def decode(tokens: torch.Tensor) -> str:
 
 
 def generate_text(
-    prompt: str,
+    prompt: str | None = None,
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
 ) -> str:
+    prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
     model = IndianaC(config)
     quantize_2bit(model)
