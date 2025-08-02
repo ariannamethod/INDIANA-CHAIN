@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from transformers.utils.import_utils import _is_package_available
+import importlib
+
+
+def _is_package_available(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
 
 
 # Use same as transformers.utils.import_utils

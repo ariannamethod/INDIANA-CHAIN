@@ -16,6 +16,7 @@
 """Reward functions for GRPO training."""
 
 import asyncio
+import importlib
 import json
 import math
 import re
@@ -302,9 +303,7 @@ def get_repetition_penalty_reward(ngram_size: int, max_penalty: float, language:
             return zip(*[words[i:] for i in range(ngram_size)]), words
 
     elif language == "zh":
-        from transformers.utils.import_utils import _is_package_available
-
-        if not _is_package_available("jieba"):
+        if importlib.util.find_spec("jieba") is None:
             raise ValueError("Please install jieba to use Chinese language")
 
         def zipngram(text: str, ngram_size: int):
