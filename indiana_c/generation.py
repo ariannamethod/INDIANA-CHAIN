@@ -24,6 +24,9 @@ def generate_text(
     log_reasoning: bool = False,
     use_history: bool = False,
     history_limit: int = 3,
+    temperature: float = 1.0,
+    top_k: int | None = None,
+    top_p: float | None = None,
 ) -> str | tuple[str, dict[str, float | int]]:
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
@@ -37,7 +40,13 @@ def generate_text(
     quantize_2bit(model)
     model.eval()
     idx = tokenizer.encode(prompt)
-    out = model.generate(idx, max_new_tokens=max_new_tokens)
+    out = model.generate(
+        idx,
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+    )
     text = tokenizer.decode(out[0])
     monitor.log(prompt, text)
     complexity, entropy = estimate_complexity_and_entropy(text)
@@ -51,6 +60,10 @@ def generate_with_think(
     prompt: str | None = None,
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
+    *,
+    temperature: float = 1.0,
+    top_k: int | None = None,
+    top_p: float | None = None,
 ) -> str | tuple[str, dict[str, float | int]]:
     """Generate text while allowing a hook for reasoning steps.
 
@@ -63,6 +76,9 @@ def generate_with_think(
         max_new_tokens=max_new_tokens,
         config=config,
         log_reasoning=False,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
     )
 
 

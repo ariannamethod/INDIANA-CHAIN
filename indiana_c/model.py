@@ -121,10 +121,54 @@ class IndianaC(nn.Module):
         return logits, loss
 
     @torch.no_grad()
-    def generate(self, idx: torch.Tensor, max_new_tokens: int) -> torch.Tensor:
+    def generate(
+        self,
+        idx: torch.Tensor,
+        max_new_tokens: int,
+        *,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float | None = None,
+    ) -> torch.Tensor:
+        """Generate new tokens from ``idx``.
+
+        Args:
+            idx: Initial sequence of token ids.
+            max_new_tokens: Number of tokens to generate.
+            temperature: Softmax temperature. ``1.0`` disables scaling.
+            top_k: If set, restrict sampling to the ``top_k`` highest logits.
+            top_p: If set, restrict sampling to the smallest set of tokens whose
+                cumulative probability mass exceeds ``top_p``.
+        """
+
         for _ in range(max_new_tokens):
             logits, _ = self(idx[:, -self.block_size :])
             logits = logits[:, -1, :]
+
+            # Temperature scaling
+            if temperature != 1.0:
+                logits = logits / temperature
+
+            # Top-k filtering
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                threshold = v[..., -1, None]
+                logits = torch.where(logits < threshold, float("-inf"), logits)
+
+            # Top-p (nucleus) filtering
+            if top_p is not None:
+                sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                sorted_probs = torch.softmax(sorted_logits, dim=-1)
+                cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+                # Remove tokens with cumulative probability above the threshold
+                mask = cumulative_probs > top_p
+                mask[..., 0] = False  # Ensure at least one token remains
+                sorted_logits[mask] = float("-inf")
+                # Unsort back to original ordering
+                logits = torch.gather(
+                    sorted_logits, -1, torch.argsort(sorted_indices, dim=-1)
+                )
+
             probs = torch.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)

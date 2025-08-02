@@ -15,6 +15,9 @@ def main() -> None:
         default=1,
         help="number of attempts to ensure answer consistency",
     )
+    parser.add_argument("--temperature", type=float, default=1.0, help="sampling temperature")
+    parser.add_argument("--top-k", type=int, default=None, help="top-k filtering")
+    parser.add_argument("--top-p", type=float, default=None, help="nucleus top-p sampling")
     args = parser.parse_args()
 
     config = IndianaCConfig(vocab_size=256)
@@ -24,6 +27,9 @@ def main() -> None:
             n=args.consistency,
             max_new_tokens=args.max_new_tokens,
             config=config,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
         )
         print(result)
     else:
@@ -32,6 +38,9 @@ def main() -> None:
             max_new_tokens=args.max_new_tokens,
             config=config,
             log_reasoning=args.verbose,
+            temperature=args.temperature,
+            top_k=args.top_k,
+            top_p=args.top_p,
         )
         if args.verbose:
             text, meta = result
