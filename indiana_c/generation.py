@@ -1,6 +1,8 @@
 import torch
 
 from .model import IndianaC, IndianaCConfig
+from .monitor import SelfMonitor
+from .quantize import quantize_2bit
 
 
 def encode(text: str, vocab_size: int) -> torch.Tensor:
@@ -18,7 +20,11 @@ def generate_text(
 ) -> str:
     config = config or IndianaCConfig()
     model = IndianaC(config)
+    quantize_2bit(model)
+    monitor = SelfMonitor()
     model.eval()
     idx = encode(prompt, config.vocab_size)
     out = model.generate(idx, max_new_tokens=max_new_tokens)
-    return decode(out[0])
+    text = decode(out[0])
+    monitor.log(prompt, text)
+    return text
