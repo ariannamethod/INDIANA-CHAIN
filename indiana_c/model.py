@@ -4,17 +4,23 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from .tokenizer import tokenizer
+
 
 @dataclass
 class IndianaCConfig:
     """Configuration for the Indiana-C transformer."""
 
     block_size: int = 1024
-    vocab_size: int = 256
+    vocab_size: int | None = None
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.vocab_size is None:
+            self.vocab_size = tokenizer.vocab_size
 
 
 class CausalSelfAttention(nn.Module):
