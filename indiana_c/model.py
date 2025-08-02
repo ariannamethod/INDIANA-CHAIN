@@ -7,8 +7,10 @@ import torch.nn as nn
 
 @dataclass
 class IndianaCConfig:
+    """Configuration for the Indiana-C transformer."""
+
     block_size: int = 1024
-    vocab_size: int = 50304
+    vocab_size: int = 256
     n_layer: int = 12
     n_head: int = 12
     n_embd: int = 768
@@ -80,6 +82,8 @@ class Block(nn.Module):
 
 
 class IndianaC(nn.Module):
+    """A minimal GPT-style model inspired by nanoGPT."""
+
     def __init__(self, config: IndianaCConfig):
         super().__init__()
         self.config = config
@@ -93,7 +97,8 @@ class IndianaC(nn.Module):
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None):
         B, T = idx.size()
-        assert T <= self.block_size, "Cannot forward, sequence too long"
+        if T > self.block_size:
+            raise ValueError("Cannot forward, sequence too long")
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device).unsqueeze(0)
         tok_emb = self.token_embedding(idx)
         pos_emb = self.position_embedding(pos)
@@ -104,7 +109,9 @@ class IndianaC(nn.Module):
         logits = self.head(x)
         loss = None
         if targets is not None:
-            loss = torch.nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = torch.nn.functional.cross_entropy(
+                logits.view(-1, logits.size(-1)), targets.view(-1)
+            )
         return logits, loss
 
     @torch.no_grad()
