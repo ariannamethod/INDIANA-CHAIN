@@ -5,5 +5,5 @@ setup(
     version="0.1.0",
     description="Indiana-C core engine",
     packages=find_packages(),
-    install_requires=["torch", "tokenizers"],
+    install_requires=["fastapi", "uvicorn", "torch", "numpy", "tokenizers"],
 )

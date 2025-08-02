@@ -4,8 +4,6 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from .tokenizer import tokenizer
-
 
 @dataclass
 class IndianaCConfig:
@@ -20,6 +18,8 @@ class IndianaCConfig:
 
     def __post_init__(self) -> None:
         if self.vocab_size is None:
+            from indiana_core import tokenizer  # type: ignore
+
             self.vocab_size = tokenizer.vocab_size
 
 
