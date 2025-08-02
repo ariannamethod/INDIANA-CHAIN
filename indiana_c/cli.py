@@ -15,6 +15,11 @@ def main() -> None:
         default=1,
         help="number of attempts to ensure answer consistency",
     )
+    parser.add_argument(
+        "--reflect",
+        action="store_true",
+        help="enable self-verification through reflection",
+    )
     args = parser.parse_args()
 
     config = IndianaCConfig(vocab_size=256)
@@ -24,6 +29,7 @@ def main() -> None:
             n=args.consistency,
             max_new_tokens=args.max_new_tokens,
             config=config,
+            self_reflect=args.reflect,
         )
         print(result)
     else:
@@ -32,6 +38,7 @@ def main() -> None:
             max_new_tokens=args.max_new_tokens,
             config=config,
             log_reasoning=args.verbose,
+            self_reflect=args.reflect,
         )
         if args.verbose:
             text, meta = result

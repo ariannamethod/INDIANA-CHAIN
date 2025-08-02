@@ -9,6 +9,7 @@ from .logger import (
     thought_logger,
 )
 from .tokenizer import tokenizer
+from .reflection import reflect
 
 CORE_PROMPT = (
     Path(__file__).resolve().parent.parent / "core_prompt.txt"
@@ -24,6 +25,7 @@ def generate_text(
     log_reasoning: bool = False,
     use_history: bool = False,
     history_limit: int = 3,
+    self_reflect: bool = False,
 ) -> str | tuple[str, dict[str, float | int]]:
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
@@ -39,11 +41,24 @@ def generate_text(
     idx = tokenizer.encode(prompt)
     out = model.generate(idx, max_new_tokens=max_new_tokens)
     text = tokenizer.decode(out[0])
+    if self_reflect:
+        critique = reflect(prompt, text, max_new_tokens=max_new_tokens, config=config)
+        if "good" not in critique.lower():
+            revision_prompt = (
+                f"{prompt}\nDraft answer: {text}\nCritique: {critique}\nRevised answer:"
+            )
+            idx = tokenizer.encode(revision_prompt)
+            out = model.generate(idx, max_new_tokens=max_new_tokens)
+            text = tokenizer.decode(out[0])
     monitor.log(prompt, text)
     complexity, entropy = estimate_complexity_and_entropy(text)
     record = thought_logger.log_turn(text, complexity, entropy)
     if log_reasoning:
-        return text, {"complexity": record.complexity, "entropy": record.entropy, "timestamp": record.timestamp}
+        return text, {
+            "complexity": record.complexity,
+            "entropy": record.entropy,
+            "timestamp": record.timestamp,
+        }
     return text
 
 
@@ -51,6 +66,7 @@ def generate_with_think(
     prompt: str | None = None,
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
+    **kwargs,
 ) -> str | tuple[str, dict[str, float | int]]:
     """Generate text while allowing a hook for reasoning steps.
 
@@ -65,6 +81,7 @@ def generate_with_think(
         max_new_tokens=max_new_tokens,
         config=config,
         log_reasoning=True,
+        **kwargs,
     )
 
 
