@@ -24,9 +24,6 @@ from typing import List
 import torch
 import torch.nn as nn
 from tokenizers import Tokenizer
-from tokenizers.models import BPE
-from tokenizers.pre_tokenizers import ByteLevel
-from tokenizers.trainers import BpeTrainer
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -86,10 +83,8 @@ def load_prompt(path: str | Path) -> str:
 # Tokenizer
 # ---------------------------------------------------------------------------
 
-_tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
-_tokenizer.pre_tokenizer = ByteLevel()
-trainer = BpeTrainer(special_tokens=["[UNK]"])
-_tokenizer.train_from_iterator([CORE_PROMPT], trainer)
+TOKENIZER_PATH = Path(__file__).with_name("tokenizer.json")
+_tokenizer = Tokenizer.from_file(str(TOKENIZER_PATH))
 
 
 class TokenizerWrapper:
@@ -107,8 +102,11 @@ class TokenizerWrapper:
         return torch.tensor([ids], dtype=torch.long)
 
     def decode(self, tokens: torch.Tensor) -> str:
-        ids = tokens.squeeze().tolist()
+        ids = tokens.reshape(-1).tolist()
         return self._tk.decode(ids)
+
+    def token_to_id(self, token: str):
+        return self._tk.token_to_id(token)
 
 
 tokenizer = TokenizerWrapper(_tokenizer)
