@@ -1,4 +1,4 @@
-"""Simple FastAPI interface exposing the Indiana-C core."""
+"""Simple FastAPI interface exposing the Indiana Chain core."""
 
 from fastapi import FastAPI
 from pydantic import BaseModel
