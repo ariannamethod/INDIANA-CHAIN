@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -508,6 +509,15 @@ def estimate_complexity_and_entropy(message: str) -> tuple[int, float]:
 thought_logger = ThoughtComplexityLogger()
 
 
+THINK_ANSWER_RE = re.compile(r"(?s)^<(?P<tag>think|answer)>.*?</(?P=tag)>$")
+
+
+def validate_think_answer(text: str) -> bool:
+    """Return ``True`` if ``text`` contains a well-formed thought or answer block."""
+
+    return bool(THINK_ANSWER_RE.match(text.strip()))
+
+
 # ---------------------------------------------------------------------------
 # Generation utilities
 # ---------------------------------------------------------------------------
@@ -586,9 +596,14 @@ def reason_loop(
     for _ in range(max_steps):
         think_prompt = f"{text}\n<think>"
         idx = tokenizer.encode(think_prompt)
-        out = model.generate(idx, max_new_tokens=max_new_tokens)
-        new_tokens = out[:, idx.shape[1] :]
-        thought = tokenizer.decode(new_tokens)
+        for _ in range(3):
+            out = model.generate(idx, max_new_tokens=max_new_tokens)
+            new_tokens = out[:, idx.shape[1] :]
+            thought = tokenizer.decode(new_tokens)
+            if validate_think_answer(f"<think>{thought}"):
+                break
+        else:  # pragma: no cover - hard to trigger
+            raise ValueError("Invalid <think> block")
         monitor.log("<think>", thought)
         text = tokenizer.decode(out[0])
         if thought == prev_thought or any(tok in thought for tok in stop_tokens):
@@ -596,9 +611,14 @@ def reason_loop(
         prev_thought = thought
         answer_prompt = f"{text}\n<answer>"
         idx = tokenizer.encode(answer_prompt)
-        out = model.generate(idx, max_new_tokens=max_new_tokens)
-        new_tokens = out[:, idx.shape[1] :]
-        final_answer = tokenizer.decode(new_tokens)
+        for _ in range(3):
+            out = model.generate(idx, max_new_tokens=max_new_tokens)
+            new_tokens = out[:, idx.shape[1] :]
+            final_answer = tokenizer.decode(new_tokens)
+            if validate_think_answer(f"<answer>{final_answer}"):
+                break
+        else:  # pragma: no cover - hard to trigger
+            raise ValueError("Invalid <answer> block")
         monitor.log("<answer>", final_answer)
         text = tokenizer.decode(out[0])
         if (

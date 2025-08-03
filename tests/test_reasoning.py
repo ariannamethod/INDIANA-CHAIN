@@ -7,13 +7,13 @@ from unittest.mock import patch
 import json
 from pathlib import Path
 
+import pytest
 import torch
 
 from indiana_core import (
     generate_consistent_text,
     generate_with_think,
     reason_loop,
-    tokenizer,
 )
 
 
@@ -50,26 +50,30 @@ def test_reason_loop_alternates_and_logs() -> None:
 
     class DummyModel:
         def __init__(self, *args, **kwargs) -> None:
-            self.calls = 0
+            pass
 
         def eval(self) -> None:  # pragma: no cover - simple stub
             pass
 
         def generate(self, idx, max_new_tokens):  # pragma: no cover - simple stub
-            self.calls += 1
-            if self.calls % 2:
-                addition = tokenizer.encode(" thought")
-            else:
-                addition = tokenizer.encode(" answer")
-            return torch.cat([idx, addition], dim=1)
+            return torch.cat([idx, torch.zeros((1, 1), dtype=idx.dtype)], dim=1)
 
     with (
         patch("indiana_core.IndianaC", DummyModel),
         patch("indiana_core.quantize_2bit", lambda _: None),
         patch("indiana_core.SelfMonitor.__init__", return_value=None),
         patch("indiana_core.SelfMonitor.log") as mock_log,
+        patch(
+            "indiana_core.tokenizer.decode",
+            side_effect=[
+                " thought</think>",
+                "Q<think> thought</think>",
+                " answer</answer>",
+                "Q<think> thought</think><answer> answer</answer>",
+            ],
+        ),
     ):
-        result = reason_loop("Q", max_steps=1)
+        result = reason_loop("Q", max_steps=1, stop_tokens=("</answer>",))
 
     assert isinstance(result, str)
     assert mock_log.call_args_list[0][0][0] == "<think>"
@@ -94,3 +98,26 @@ def test_gsm8k_subset_accuracy() -> None:
 
     accuracy = correct / len(samples)
     assert accuracy == 1.0
+
+
+def test_reason_loop_rejects_invalid_output() -> None:
+    """When retries fail to produce valid output, an error is raised."""
+
+    class DummyModel:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def eval(self) -> None:  # pragma: no cover - simple stub
+            pass
+
+        def generate(self, idx, max_new_tokens):  # pragma: no cover - simple stub
+            return torch.cat([idx, torch.zeros((1, 1), dtype=idx.dtype)], dim=1)
+
+    with (
+        patch("indiana_core.IndianaC", DummyModel),
+        patch("indiana_core.quantize_2bit", lambda _: None),
+        patch("indiana_core.SelfMonitor.__init__", return_value=None),
+        patch("indiana_core.tokenizer.decode", return_value=" bad"),
+    ):
+        with pytest.raises(ValueError):
+            reason_loop("Q", max_steps=1)
