@@ -9,6 +9,7 @@ module.
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import math
@@ -404,10 +405,13 @@ class SelfMonitor:
 
     def stop_watchers(self) -> None:
         """Stop all active directory watchers."""
-        for observer in self.observers.values():
+        observers = getattr(self, "observers", None)
+        if not observers:
+            return
+        for observer in observers.values():
             observer.stop()
             observer.join()
-        self.observers.clear()
+        observers.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +427,7 @@ def get_monitor() -> SelfMonitor:
     global _monitor_instance
     if _monitor_instance is None or not isinstance(_monitor_instance, SelfMonitor):
         _monitor_instance = SelfMonitor()
+        atexit.register(_monitor_instance.stop_watchers)
     return _monitor_instance
 
 

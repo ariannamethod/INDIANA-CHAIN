@@ -14,6 +14,9 @@ class DummyMonitor:
     def log(self, *_args, **_kwargs):
         pass
 
+    def stop_watchers(self):
+        pass
+
 
 def _patch_env():
     return (
