@@ -295,9 +295,11 @@ class SelfMonitor:
         db_path: str = "indiana_memory.sqlite",
         *,
         watch_datasets: bool = True,
+        max_logs: int = 1000,
     ):
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.lock = threading.Lock()
+        self.max_logs = max_logs
         self._init_db()
         self.observers: dict[str, Observer] = {}
         self.snapshot_codebase()
@@ -356,6 +358,22 @@ class SelfMonitor:
                 "INSERT INTO prompts_index(prompt, output) VALUES (?,?)",
                 (prompt, output),
             )
+            if self.max_logs is not None:
+                cur.execute("SELECT COUNT(*) FROM logs")
+                count = cur.fetchone()[0]
+                if count > self.max_logs:
+                    excess = count - self.max_logs
+                    cur.execute(
+                        "DELETE FROM logs WHERE rowid IN (SELECT rowid FROM logs ORDER BY ts LIMIT ?)",
+                        (excess,),
+                    )
+                    cur.execute(
+                        (
+                            "DELETE FROM prompts_index WHERE rowid IN (SELECT rowid FROM prompts_index "
+                            "ORDER BY rowid LIMIT ?)"
+                        ),
+                        (excess,),
+                    )
             self.conn.commit()
 
     def _search_tfidf(self, query: str, limit: int = 5) -> list[tuple[str, str]]:

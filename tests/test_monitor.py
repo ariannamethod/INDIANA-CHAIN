@@ -28,3 +28,21 @@ def test_search_tfidf_limit(tmp_path):
         assert all("hello" in p for p, _ in results)
     finally:
         os.chdir(cwd)
+
+
+def test_max_logs_limit(tmp_path):
+    cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        monitor = SelfMonitor(db_path=str(tmp_path / "mem.sqlite"), max_logs=5)
+        for i in range(10):
+            monitor.log(f"prompt {i}", f"out{i}")
+        cur = monitor.conn.cursor()
+        cur.execute("SELECT prompt FROM logs ORDER BY ts")
+        prompts = [row[0] for row in cur.fetchall()]
+        assert len(prompts) == 5
+        assert prompts == [f"prompt {i}" for i in range(5, 10)]
+        cur.execute("SELECT COUNT(*) FROM prompts_index")
+        assert cur.fetchone()[0] == 5
+    finally:
+        os.chdir(cwd)
