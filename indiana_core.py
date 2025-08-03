@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -464,6 +465,7 @@ class ThoughtLogEntry:
     message: str
     complexity: int
     entropy: float
+    steps: int
 
 
 class ThoughtComplexityLogger:
@@ -474,12 +476,19 @@ class ThoughtComplexityLogger:
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.logs: List[ThoughtLogEntry] = []
 
-    def log_turn(self, message: str, complexity_scale: int, entropy: float) -> ThoughtLogEntry:
+    def log_turn(
+        self,
+        message: str,
+        complexity_scale: int,
+        entropy: float,
+        steps: int,
+    ) -> ThoughtLogEntry:
         entry = ThoughtLogEntry(
             timestamp=datetime.utcnow().isoformat() + "Z",
             message=message,
             complexity=max(1, min(5, complexity_scale)),
             entropy=float(min(1.0, entropy)),
+            steps=int(steps),
         )
         self.logs.append(entry)
         with self.log_file.open("a", encoding="utf-8") as f:
@@ -490,7 +499,10 @@ class ThoughtComplexityLogger:
         return self.logs[-n:]
 
 
-def estimate_complexity_and_entropy(message: str) -> tuple[int, float]:
+reasoning_steps_reward = re.compile(r"(?:^|\n)\s*(?:\d+\.|step\s*\d+)", re.IGNORECASE)
+
+
+def estimate_complexity_and_entropy(message: str) -> tuple[int, float, int]:
     complexity = 1
     lowered = message.lower()
     if any(keyword in lowered for keyword in ["why", "paradox", "recursive"]):
@@ -502,7 +514,8 @@ def estimate_complexity_and_entropy(message: str) -> tuple[int, float]:
     complexity = max(1, min(5, complexity))
     unique_words = len(set(message.split()))
     entropy = min(1.0, unique_words / 40)
-    return complexity, entropy
+    steps = len(reasoning_steps_reward.findall(message))
+    return complexity, entropy, steps
 
 
 thought_logger = ThoughtComplexityLogger()
@@ -552,13 +565,14 @@ def generate_text(
             out = model.generate(idx, max_new_tokens=max_new_tokens)
             text = tokenizer.decode(out[0])
     monitor.log(prompt, text)
-    complexity, entropy = estimate_complexity_and_entropy(text)
-    record = thought_logger.log_turn(text, complexity, entropy)
+    complexity, entropy, steps = estimate_complexity_and_entropy(text)
+    record = thought_logger.log_turn(text, complexity, entropy, steps)
     if log_reasoning:
         return text, {
             "complexity": record.complexity,
             "entropy": record.entropy,
             "timestamp": record.timestamp,
+            "steps": record.steps,
         }
     return text
 
@@ -725,7 +739,8 @@ def main() -> None:
             text, meta = result
             print(text)
             print(
-                f"LOG@{meta['timestamp']} | Complexity: {meta['complexity']} | Entropy: {meta['entropy']:.2f}"
+                f"LOG@{meta['timestamp']} | Complexity: {meta['complexity']} | "
+                f"Entropy: {meta['entropy']:.2f} | Steps: {meta['steps']}"
             )
         else:
             print(result)
@@ -746,6 +761,7 @@ __all__ = [
     "CORE_PROMPT",
     "ThoughtComplexityLogger",
     "estimate_complexity_and_entropy",
+    "reasoning_steps_reward",
     "thought_logger",
     "get_monitor",
     "SelfMonitor",

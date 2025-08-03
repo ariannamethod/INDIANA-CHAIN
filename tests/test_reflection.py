@@ -21,7 +21,7 @@ def _patch_env():
         patch("indiana_core.quantize_2bit"),
         patch(
             "indiana_core.thought_logger.log_turn",
-            return_value=SimpleNamespace(complexity=1, entropy=0.1, timestamp="t"),
+            return_value=SimpleNamespace(complexity=1, entropy=0.1, steps=0, timestamp="t"),
         ),
     )
 
