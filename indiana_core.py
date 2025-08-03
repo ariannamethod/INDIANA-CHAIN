@@ -22,7 +22,9 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Literal
+
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -298,12 +300,23 @@ class SelfMonitor:
         db_path: str = "indiana_memory.sqlite",
         *,
         watch_datasets: bool = True,
+        embedding_model: str | None = None,
+        embedder=None,
     ):
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.lock = threading.Lock()
         self._init_db()
         self.observers: dict[str, Observer] = {}
         self.snapshot_codebase()
+
+        self.embedder = embedder
+        if self.embedder is None and embedding_model is not None:
+            try:
+                from sentence_transformers import SentenceTransformer
+
+                self.embedder = SentenceTransformer(embedding_model)
+            except Exception:
+                self.embedder = None
 
         if watch_datasets:
             datasets_dir = Path("datasets")
@@ -320,6 +333,9 @@ class SelfMonitor:
         )
         cur.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS prompts_index USING fts5(prompt, output)"
+        )
+        cur.execute(
+            "CREATE TABLE IF NOT EXISTS prompt_embeddings(sha256 TEXT PRIMARY KEY, vector BLOB, dim INTEGER)"
         )
         self.conn.commit()
 
@@ -359,6 +375,15 @@ class SelfMonitor:
                 "INSERT INTO prompts_index(prompt, output) VALUES (?,?)",
                 (prompt, output),
             )
+            if self.embedder is not None:
+                try:
+                    vec = np.asarray(self.embedder.encode(prompt), dtype=np.float32)
+                    cur.execute(
+                        "INSERT OR REPLACE INTO prompt_embeddings(sha256, vector, dim) VALUES (?,?,?)",
+                        (sha, sqlite3.Binary(vec.tobytes()), vec.size),
+                    )
+                except Exception:
+                    pass
             self.conn.commit()
 
     def _search_tfidf(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
@@ -371,10 +396,38 @@ class SelfMonitor:
             )
             return cur.fetchall()
 
-    def search(self, prompt: str, limit: int = 5) -> list[tuple[str, str]]:
+    def _search_embeddings(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
+        if self.embedder is None:
+            return []
+        q = np.asarray(self.embedder.encode(query), dtype=np.float32)
+        with self.lock:
+            cur = self.conn.cursor()
+            cur.execute(
+                "SELECT logs.prompt, logs.output, prompt_embeddings.vector, prompt_embeddings.dim "
+                "FROM logs JOIN prompt_embeddings USING(sha256)"
+            )
+            rows = cur.fetchall()
+        if not rows:
+            return []
+        prompts_outputs: list[tuple[str, str]] = []
+        vectors = []
+        for prompt, output, blob, dim in rows:
+            vec = np.frombuffer(blob, dtype=np.float32, count=dim)
+            prompts_outputs.append((prompt, output))
+            vectors.append(vec)
+        matrix = np.vstack(vectors)
+        norms = np.linalg.norm(matrix, axis=1) * (np.linalg.norm(q) + 1e-8)
+        sims = (matrix @ q) / (norms + 1e-8)
+        idx = np.argsort(-sims)[:limit]
+        return [prompts_outputs[i] for i in idx]
+
+    def search(
+        self, prompt: str, limit: int = 5, method: Literal["tfidf", "embedding"] = "tfidf"
+    ) -> list[tuple[str, str]]:
         """Return top-k similar prompt/output pairs.
 
-        Exact SHA-256 matches are preferred; otherwise a TF-IDF lookup is used.
+        Exact SHA-256 matches are preferred; otherwise the specified lookup
+        method is used.
         """
 
         sha = hashlib.sha256(prompt.encode()).hexdigest()
@@ -387,10 +440,20 @@ class SelfMonitor:
             rows = cur.fetchall()
         if rows:
             return rows
+        if method == "embedding":
+            results = self._search_embeddings(prompt, limit=limit)
+            if results:
+                return results
         return self._search_tfidf(prompt, limit=limit)
 
-    def search_prompts(self, query: str, limit: int = 5) -> list[tuple[str, str]]:
+    def search_prompts(
+        self, query: str, limit: int = 5, method: Literal["tfidf", "embedding"] = "tfidf"
+    ) -> list[tuple[str, str]]:
         """Search previously logged prompts similar to the query."""
+        if method == "embedding":
+            results = self._search_embeddings(query, limit=limit)
+            if results:
+                return results
         return self._search_tfidf(query, limit=limit)
 
     def watch_directory(self, path: str | Path) -> None:
