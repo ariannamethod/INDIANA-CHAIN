@@ -567,12 +567,22 @@ def reason_loop(
     prompt: str | None = None,
     *,
     max_steps: int = 5,
-    stop_tokens: tuple[str, ...] = ("</think>", "</answer>"),
+    stop_tokens: tuple[str, ...] = ("</plan>", "</think>", "</answer>", "</critique>"),
     max_new_tokens: int = 50,
     config: IndianaCConfig | None = None,
     monitor: SelfMonitor | None = None,
 ) -> str:
-    """Iteratively alternate between ``<think>`` and ``<answer>`` phases."""
+    """Iteratively cycle through plan, think, answer and critique phases.
+
+    The loop adapts its termination based on the quality of the generated
+    critique rather than a fixed ``max_steps`` count.  After producing an
+    answer, a critique is generated; if the critique does not signal that the
+    answer is good enough, a revised answer is produced and the loop continues.
+    """
+
+    def _critique_positive(critique: str) -> bool:
+        lowered = critique.lower()
+        return any(word in lowered for word in ["good", "correct", "looks good", "no issues"])
 
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
@@ -582,8 +592,19 @@ def reason_loop(
     model.eval()
     text = prompt
     final_answer = ""
-    prev_thought = prev_answer = None
+    prev_plan = prev_thought = prev_answer = None
     for _ in range(max_steps):
+        plan_prompt = f"{text}\n<plan>"
+        idx = tokenizer.encode(plan_prompt)
+        out = model.generate(idx, max_new_tokens=max_new_tokens)
+        new_tokens = out[:, idx.shape[1] :]
+        plan = tokenizer.decode(new_tokens)
+        monitor.log("<plan>", plan)
+        text = tokenizer.decode(out[0])
+        if plan == prev_plan or any(tok in plan for tok in stop_tokens):
+            break
+        prev_plan = plan
+
         think_prompt = f"{text}\n<think>"
         idx = tokenizer.encode(think_prompt)
         out = model.generate(idx, max_new_tokens=max_new_tokens)
@@ -594,6 +615,7 @@ def reason_loop(
         if thought == prev_thought or any(tok in thought for tok in stop_tokens):
             break
         prev_thought = thought
+
         answer_prompt = f"{text}\n<answer>"
         idx = tokenizer.encode(answer_prompt)
         out = model.generate(idx, max_new_tokens=max_new_tokens)
@@ -601,12 +623,25 @@ def reason_loop(
         final_answer = tokenizer.decode(new_tokens)
         monitor.log("<answer>", final_answer)
         text = tokenizer.decode(out[0])
-        if (
-            final_answer == prev_answer
-            or any(tok in final_answer for tok in stop_tokens)
-        ):
+        if final_answer == prev_answer or any(tok in final_answer for tok in stop_tokens):
             break
         prev_answer = final_answer
+
+        critique = reflect(prompt, final_answer, max_new_tokens=max_new_tokens, config=config)
+        monitor.log("<critique>", critique)
+        if _critique_positive(critique):
+            break
+
+        revision_prompt = (
+            f"{prompt}\nDraft answer: {final_answer}\nCritique: {critique}\nRevised answer:"
+        )
+        idx = tokenizer.encode(revision_prompt)
+        out = model.generate(idx, max_new_tokens=max_new_tokens)
+        new_tokens = out[:, idx.shape[1] :]
+        final_answer = tokenizer.decode(new_tokens)
+        prev_answer = final_answer
+        text = f"{prompt}\nPrevious answer: {final_answer}\nCritique: {critique}"
+
     return final_answer or text
 
 
