@@ -12,6 +12,7 @@ import torch
 from indiana_core import (
     generate_consistent_text,
     generate_with_think,
+    generate_text,
     reason_loop,
     tokenizer,
 )
@@ -74,6 +75,38 @@ def test_reason_loop_alternates_and_logs() -> None:
     assert isinstance(result, str)
     assert mock_log.call_args_list[0][0][0] == "<think>"
     assert mock_log.call_args_list[1][0][0] == "<answer>"
+
+
+def _run_model_with_output(output: str):
+    class DummyModel:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def eval(self) -> None:  # pragma: no cover - simple stub
+            pass
+
+        def generate(self, idx, max_new_tokens):  # pragma: no cover - simple stub
+            return torch.zeros((1, 1), dtype=torch.long)
+
+    with (
+        patch("indiana_core.IndianaC", DummyModel),
+        patch("indiana_core.quantize_2bit", lambda _: None),
+        patch("indiana_core.SelfMonitor.__init__", return_value=None),
+        patch("indiana_core.SelfMonitor.log"),
+        patch("indiana_core.tokenizer.encode", return_value=torch.zeros((1, 1), dtype=torch.long)),
+        patch("indiana_core.tokenizer.decode", return_value=output),
+    ):
+        return generate_text("Q", validate_code=True)
+
+
+def test_validate_code_executes_and_reports() -> None:
+    """``generate_text`` should run code blocks and return output or error."""
+
+    good = _run_model_with_output("```python\nprint(2)\n```")
+    assert good[1]["result"].strip() == "2"
+
+    bad = _run_model_with_output("```python\n1/0\n```")
+    assert "error" in bad[1]
 
 
 def test_gsm8k_subset_accuracy() -> None:
