@@ -16,7 +16,7 @@ import sqlite3
 import threading
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List
@@ -112,6 +112,13 @@ class TokenizerWrapper:
 
 
 tokenizer = TokenizerWrapper(_tokenizer)
+
+
+MODEL_CACHE: dict[str, IndianaC] = {}
+
+
+def _config_to_key(config: IndianaCConfig) -> str:
+    return hashlib.md5(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -536,8 +543,12 @@ def generate_text(
                 f"Prompt: {p}\nOutput: {o}" for p, o in examples
             )
             prompt = f"{combined}\n{prompt}"
-    model = IndianaC(config)
-    quantize_2bit(model)
+    key = _config_to_key(config)
+    model = MODEL_CACHE.get(key)
+    if model is None:
+        model = IndianaC(config)
+        quantize_2bit(model)
+        MODEL_CACHE[key] = model
     model.eval()
     idx = tokenizer.encode(prompt)
     out = model.generate(idx, max_new_tokens=max_new_tokens)
@@ -577,8 +588,12 @@ def reason_loop(
     prompt = prompt or CORE_PROMPT
     config = config or IndianaCConfig()
     monitor = monitor or get_monitor()
-    model = IndianaC(config)
-    quantize_2bit(model)
+    key = _config_to_key(config)
+    model = MODEL_CACHE.get(key)
+    if model is None:
+        model = IndianaC(config)
+        quantize_2bit(model)
+        MODEL_CACHE[key] = model
     model.eval()
     text = prompt
     final_answer = ""
