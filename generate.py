@@ -1,4 +1,4 @@
-"""Generate Chain-of-Thought traces using the Indiana-C model."""
+"""Generate Chain-of-Thought traces using the Indiana Chain model."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class SimpleMonitor:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate CoT traces with Indiana-C"
+        description="Generate CoT traces with Indiana Chain"
     )
     parser.add_argument("--dataset", required=True, help="Dataset path or HF name")
     parser.add_argument("--output", required=True, help="Where to store JSONL results")

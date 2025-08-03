@@ -1,4 +1,4 @@
-"""Simple fine-tuning utility for the Indiana-C model."""
+"""Simple fine-tuning utility for the Indiana Chain model."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def collate(batch: List[tuple[torch.Tensor, torch.Tensor]]):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Fine-tune Indiana-C on a dataset")
+    parser = argparse.ArgumentParser(description="Fine-tune Indiana Chain on a dataset")
     parser.add_argument("--dataset", required=True, help="Dataset path or HF name")
     parser.add_argument("--split", default="train")
     parser.add_argument("--prompt-key", default="prompt")
