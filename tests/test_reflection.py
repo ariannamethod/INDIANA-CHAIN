@@ -20,8 +20,13 @@ def _patch_env():
         patch("indiana_core.SelfMonitor", DummyMonitor),
         patch("indiana_core.quantize_2bit"),
         patch(
+            "indiana_core.estimate_complexity_and_entropy", return_value=(1, 0.1, 1.0)
+        ),
+        patch(
             "indiana_core.thought_logger.log_turn",
-            return_value=SimpleNamespace(complexity=1, entropy=0.1, timestamp="t"),
+            return_value=SimpleNamespace(
+                complexity=1, entropy=0.1, perplexity=1.0, timestamp="t"
+            ),
         ),
     )
 
@@ -29,11 +34,12 @@ def _patch_env():
 def test_reflection_revises_answer_when_critique_negative() -> None:
     draft = tokenizer.encode("draft")
     revised = tokenizer.encode("revised")
-    p1, p2, p3 = _patch_env()
+    p1, p2, p3, p4 = _patch_env()
     with (
         p1,
         p2,
         p3,
+        p4,
         patch("indiana_core.reflect", return_value="Needs work"),
         patch("indiana_core.IndianaC") as MockModel,
     ):
@@ -47,11 +53,12 @@ def test_reflection_revises_answer_when_critique_negative() -> None:
 
 def test_reflection_keeps_answer_when_critique_positive() -> None:
     draft = tokenizer.encode("draft")
-    p1, p2, p3 = _patch_env()
+    p1, p2, p3, p4 = _patch_env()
     with (
         p1,
         p2,
         p3,
+        p4,
         patch("indiana_core.reflect", return_value="Looks good"),
         patch("indiana_core.IndianaC") as MockModel,
     ):

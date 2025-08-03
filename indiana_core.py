@@ -30,6 +30,15 @@ from tokenizers.trainers import BpeTrainer
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+import importlib.util as _ilu
+
+_log_spec = _ilu.spec_from_file_location(
+    "indiana_logging", Path(__file__).with_name("logging.py")
+)
+_logging_mod = _ilu.module_from_spec(_log_spec)
+_log_spec.loader.exec_module(_logging_mod)
+lexical_entropy = _logging_mod.lexical_entropy
+simple_perplexity = _logging_mod.simple_perplexity
 
 # ---------------------------------------------------------------------------
 # Core prompt
@@ -464,22 +473,26 @@ class ThoughtLogEntry:
     message: str
     complexity: int
     entropy: float
+    perplexity: float
 
 
 class ThoughtComplexityLogger:
-    """Track complexity and entropy of generated thoughts."""
+    """Track complexity, entropy and perplexity of generated thoughts."""
 
     def __init__(self, log_file: str | Path = "logs/thought_log.jsonl") -> None:
         self.log_file = Path(log_file)
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         self.logs: List[ThoughtLogEntry] = []
 
-    def log_turn(self, message: str, complexity_scale: int, entropy: float) -> ThoughtLogEntry:
+    def log_turn(
+        self, message: str, complexity_scale: int, entropy: float, perplexity: float
+    ) -> ThoughtLogEntry:
         entry = ThoughtLogEntry(
             timestamp=datetime.utcnow().isoformat() + "Z",
             message=message,
             complexity=max(1, min(5, complexity_scale)),
             entropy=float(min(1.0, entropy)),
+            perplexity=float(perplexity),
         )
         self.logs.append(entry)
         with self.log_file.open("a", encoding="utf-8") as f:
@@ -490,7 +503,7 @@ class ThoughtComplexityLogger:
         return self.logs[-n:]
 
 
-def estimate_complexity_and_entropy(message: str) -> tuple[int, float]:
+def estimate_complexity_and_entropy(message: str) -> tuple[int, float, float]:
     complexity = 1
     lowered = message.lower()
     if any(keyword in lowered for keyword in ["why", "paradox", "recursive"]):
@@ -500,9 +513,12 @@ def estimate_complexity_and_entropy(message: str) -> tuple[int, float]:
     if "?" in message:
         complexity += 1
     complexity = max(1, min(5, complexity))
-    unique_words = len(set(message.split()))
-    entropy = min(1.0, unique_words / 40)
-    return complexity, entropy
+    entropy = lexical_entropy(message)
+    model = IndianaC(IndianaCConfig())
+    quantize_2bit(model)
+    model.eval()
+    perplexity = simple_perplexity(message, tokenizer, model)
+    return complexity, entropy, perplexity
 
 
 thought_logger = ThoughtComplexityLogger()
@@ -552,12 +568,13 @@ def generate_text(
             out = model.generate(idx, max_new_tokens=max_new_tokens)
             text = tokenizer.decode(out[0])
     monitor.log(prompt, text)
-    complexity, entropy = estimate_complexity_and_entropy(text)
-    record = thought_logger.log_turn(text, complexity, entropy)
+    complexity, entropy, perplexity = estimate_complexity_and_entropy(text)
+    record = thought_logger.log_turn(text, complexity, entropy, perplexity)
     if log_reasoning:
         return text, {
             "complexity": record.complexity,
             "entropy": record.entropy,
+            "perplexity": record.perplexity,
             "timestamp": record.timestamp,
         }
     return text
