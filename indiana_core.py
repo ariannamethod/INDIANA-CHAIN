@@ -90,6 +90,11 @@ _tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
 _tokenizer.pre_tokenizer = ByteLevel()
 trainer = BpeTrainer(special_tokens=["[UNK]"])
 _tokenizer.train_from_iterator([CORE_PROMPT], trainer)
+# Extend vocabulary with common code syntax and FIM markers
+_SYNTAX_TOKENS = ["(", ")", "{", "}", "[", "]", ":", ";", ",", ".", "="]
+_FIM_TOKENS = ["<fim_prefix>", "<fim_suffix>", "<fim_middle>"]
+_tokenizer.add_tokens(_SYNTAX_TOKENS)
+_tokenizer.add_special_tokens(_FIM_TOKENS)
 
 
 class TokenizerWrapper:
@@ -563,6 +568,28 @@ def generate_text(
     return text
 
 
+def generate_code(
+    prefix: str,
+    suffix: str = "",
+    max_new_tokens: int = 50,
+    config: IndianaCConfig | None = None,
+) -> str:
+    """Generate code completion or infill between ``prefix`` and ``suffix``."""
+
+    config = config or IndianaCConfig()
+    model = IndianaC(config)
+    quantize_2bit(model)
+    model.eval()
+    if suffix:
+        prompt = f"<fim_prefix>{prefix}<fim_suffix>{suffix}<fim_middle>"
+    else:
+        prompt = prefix
+    idx = tokenizer.encode(prompt)
+    out = model.generate(idx, max_new_tokens=max_new_tokens)
+    new_tokens = out[:, idx.shape[1]:]
+    return tokenizer.decode(new_tokens[0])
+
+
 def reason_loop(
     prompt: str | None = None,
     *,
@@ -738,6 +765,7 @@ if __name__ == "__main__":  # pragma: no cover - CLI entry
 __all__ = [
     "tokenizer",
     "generate_text",
+    "generate_code",
     "reason_loop",
     "generate_with_think",
     "generate_consistent_text",
