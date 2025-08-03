@@ -1,0 +1,3 @@
+{"prompt": "Calculate factorial of 5 and store the result in a variable named 'result'.", "expected": 120}
+{"prompt": "Compute the sum of squares from 1 to 10 and assign to 'result'.", "expected": 385}
+{"prompt": "Determine if the string 'racecar' is a palindrome and set 'result' accordingly.", "expected": true}
