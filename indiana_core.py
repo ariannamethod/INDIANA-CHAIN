@@ -15,6 +15,9 @@ import math
 import sqlite3
 import threading
 import time
+import re
+import contextlib
+import io
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -513,6 +516,30 @@ thought_logger = ThoughtComplexityLogger()
 # ---------------------------------------------------------------------------
 
 
+def validate_python_code(text: str) -> dict[str, str] | None:
+    """Validate Python code blocks and optionally execute them.
+
+    The function searches for a markdown style Python code block. If found, the
+    snippet is executed in a restricted namespace and the captured stdout is
+    returned. Any exception is caught and returned as an ``error`` entry. When no
+    code block is present ``None`` is returned.
+    """
+
+    pattern = re.compile(r"```python\n(?P<code>.*?)```", re.DOTALL)
+    match = pattern.search(text)
+    if not match:
+        return None
+    code = match.group("code")
+    stdout = io.StringIO()
+    safe_builtins = {"print": print}
+    try:
+        with contextlib.redirect_stdout(stdout):
+            exec(code, {"__builtins__": safe_builtins}, {})
+        return {"result": stdout.getvalue()}
+    except Exception as exc:  # pragma: no cover - error path tested separately
+        return {"error": str(exc)}
+
+
 def generate_text(
     prompt: str | None = None,
     max_new_tokens: int = 50,
@@ -523,7 +550,8 @@ def generate_text(
     memory_limit: int = 3,
     self_reflect: bool = False,
     monitor: SelfMonitor | None = None,
-) -> str | tuple[str, dict[str, float | int]]:
+    validate_code: bool = True,
+) -> str | tuple[str, dict[str, float | int | str]]:
     """Generate a completion optionally enriched with past prompts."""
 
     prompt = prompt or CORE_PROMPT
@@ -552,14 +580,20 @@ def generate_text(
             out = model.generate(idx, max_new_tokens=max_new_tokens)
             text = tokenizer.decode(out[0])
     monitor.log(prompt, text)
+    validation = validate_python_code(text) if validate_code else None
     complexity, entropy = estimate_complexity_and_entropy(text)
     record = thought_logger.log_turn(text, complexity, entropy)
     if log_reasoning:
-        return text, {
+        data: dict[str, float | int | str | dict[str, str]] = {
             "complexity": record.complexity,
             "entropy": record.entropy,
             "timestamp": record.timestamp,
         }
+        if validation is not None:
+            data["validation"] = validation
+        return text, data
+    if validation is not None:
+        return text, validation
     return text
 
 
