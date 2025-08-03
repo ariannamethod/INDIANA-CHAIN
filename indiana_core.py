@@ -350,9 +350,6 @@ class IndianaC(nn.Module):
         self.block_size = config.block_size
         self.eval()
         torch.set_grad_enabled(False)
-        # CPU-first: keep toy 2-bit quantization if requested
-        if self.config.apply_quant:
-            quantize_2bit(self)
 
     def forward(self, idx: torch.Tensor, targets: Optional[torch.Tensor] = None):
         B, T = idx.size()
@@ -599,9 +596,14 @@ class SelfMonitor:
     def _snapshot_file(self, path: Path) -> None:
         if not path.is_file():
             return
-        p = path.resolve()
-        if p == self.db_path:
+        p_abs = path.resolve()
+        if p_abs == self.db_path:
             return
+        p = p_abs
+        try:
+            p = p.relative_to(Path.cwd())
+        except ValueError:
+            pass
         if any(part in SelfMonitor._skip_dirs for part in p.parts):
             return
         if p.suffix.lower() in SelfMonitor._skip_suffixes:
@@ -615,7 +617,10 @@ class SelfMonitor:
         sha = hashlib.sha256(data).hexdigest()
         with self.lock:
             cur = self.conn.cursor()
-            cur.execute("INSERT OR REPLACE INTO files(path, content, sha256) VALUES (?,?,?)", (str(p), sqlite3.Binary(data), sha))
+            cur.execute(
+                "INSERT OR REPLACE INTO files(path, content, sha256) VALUES (?,?,?)",
+                (str(p), sqlite3.Binary(data), sha),
+            )
             self.conn.commit()
     def snapshot_codebase(self, root: str | Path = ".") -> None:
         root_path = Path(root)
@@ -723,7 +728,7 @@ def get_monitor() -> SelfMonitor:
     global _monitor_instance
     if _monitor_instance is None or not isinstance(_monitor_instance, SelfMonitor):
         _monitor_instance = SelfMonitor()
-        atexit.register(_monitor_instance.stop_watchers)
+    atexit.register(_monitor_instance.stop_watchers)
     return _monitor_instance
 
 
@@ -755,9 +760,9 @@ def reflect(
     cfg = config or IndianaCConfig()
     model = IndianaC(cfg)
     idx = tokenizer.encode(critique_prompt)
-    out = model.generate(
-        idx, max_new_tokens=max_new_tokens,
-        temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p
+    out = _safe_generate(
+        model, idx, max_new_tokens,
+        temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
     )
     return tokenizer.decode(out if isinstance(out, torch.Tensor) else out[0])
 
@@ -860,8 +865,21 @@ def _get_model(config: Optional[IndianaCConfig] = None) -> IndianaC:
     model = MODEL_CACHE.get(key)
     if model is None:
         model = IndianaC(cfg)
+        if cfg.apply_quant:
+            quantize_2bit(model)
         MODEL_CACHE[key] = model
     return model
+
+
+def _safe_generate(model, idx, max_new_tokens, **kwargs):
+    want_meta = kwargs.get("return_meta")
+    try:
+        return model.generate(idx, max_new_tokens=max_new_tokens, **kwargs)
+    except TypeError:
+        out = model.generate(idx, max_new_tokens)
+        if want_meta:
+            return out, {}
+        return out
 
 def _external_verify_or_repair(user_prompt: str, answer: str) -> str:
     """Ask the external engine to verify/repair answer; return possibly revised."""
@@ -943,7 +961,6 @@ def _apply_repetition_penalty(logits: torch.Tensor, recent: Sequence[int], penal
 def _ban_repeating_ngrams(prefix: List[int], n: int) -> set[int]:
     if n <= 0 or len(prefix) < n-1:
         return set()
-    banned = set()
     nxt: Dict[Tuple[int, ...], set[int]] = {}
     for i in range(len(prefix) - n + 1):
         key = tuple(prefix[i:i+n-1])
@@ -986,10 +1003,10 @@ def generate_text(
     model = _get_model(cfg)
     model.eval()
     idx = tokenizer.encode(text_prompt)
-    out = model.generate(
-        idx, max_new_tokens=max_new_tokens,
+    out = _safe_generate(
+        model, idx, max_new_tokens,
         temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
-        stop_texts=stop_texts, return_meta=True
+        stop_texts=stop_texts, return_meta=True,
     )
     if isinstance(out, tuple):
         seq, meta = out
@@ -1003,10 +1020,10 @@ def generate_text(
         if "good" not in critique_local.lower():
             revision_prompt = f"{text_prompt}\nDraft answer: {text}\nCritique: {critique_local}\nRevised answer:"
             idx2 = tokenizer.encode(revision_prompt)
-            out2 = model.generate(
-                idx2, max_new_tokens=max_new_tokens,
+            out2 = _safe_generate(
+                model, idx2, max_new_tokens,
                 temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
-                stop_texts=stop_texts
+                stop_texts=stop_texts,
             )
             text = tokenizer.decode(out2 if isinstance(out2, torch.Tensor) else out2[0])
 
@@ -1026,12 +1043,12 @@ def generate_text(
         except Exception as e:  # safety net
             validation = {"error": f"validator failed: {e}"}
         if validation is not None:
-            out_meta["validation"] = validation
+            out_meta.update(validation)
     complexity, entropy = estimate_complexity_and_entropy(text)
     rec = thought_logger.log_turn(text, complexity, entropy)
     out_meta.update({"complexity": rec.complexity, "entropy": rec.entropy, "timestamp": rec.timestamp, "uncertainty": tail_H})
 
-    return (text, out_meta) if log_reasoning else text
+    return (text, out_meta) if (log_reasoning or validate_code) else text
 
 def generate_code(
     prefix: str,
@@ -1048,11 +1065,12 @@ def generate_code(
     else:
         prompt = prefix
     idx = tokenizer.encode(prompt)
-    out = model.generate(
-        idx, max_new_tokens=max_new_tokens,
+    prompt_len = idx.shape[1]
+    out = _safe_generate(
+        model, idx, max_new_tokens,
         temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p
     )
-    new_tokens = out[:, idx.shape[1]:] if isinstance(out, torch.Tensor) else out[0][:, idx.shape[1]:]
+    new_tokens = out[:, prompt_len:] if isinstance(out, torch.Tensor) else out[0][:, prompt_len:]
     return tokenizer.decode(new_tokens[0])
 
 def reason_loop(
@@ -1097,10 +1115,10 @@ def reason_loop(
     for step in range(1, max_steps + 1):
         # PLAN
         plan_idx = tokenizer.encode(f"{text_prompt}\n<plan>")
-        plan_out = model.generate(
-            plan_idx, max_new_tokens=max_new_tokens,
+        plan_out = _safe_generate(
+            model, plan_idx, max_new_tokens,
             temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
-            stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs, return_meta=True
+            stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs, return_meta=True,
         )
         plan_tokens, meta_plan = plan_out
         plan_full_text = tokenizer.decode(plan_tokens[0])
@@ -1109,25 +1127,27 @@ def reason_loop(
 
         # THINK
         think_idx = tokenizer.encode(f"{plan_full_text}\n<think>")
-        think_out = model.generate(
-            think_idx, max_new_tokens=max_new_tokens,
+        think_out = _safe_generate(
+            model, think_idx, max_new_tokens,
             temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
-            stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs, return_meta=True
+            stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs, return_meta=True,
         )
         think_tokens, meta_think = think_out
         think_full_text = tokenizer.decode(think_tokens[0])
         thought = tokenizer.decode(think_tokens[0, think_idx.shape[1]:])
         mon.log("<think>", thought)
 
-        if plan.strip() or thought.strip():
+        if plan.strip():
+            internal_done += 1
+        if thought.strip():
             internal_done += 1
 
         # ANSWER
         ans_idx = tokenizer.encode(f"{think_full_text}\n<answer>")
-        ans_out = model.generate(
-            ans_idx, max_new_tokens=max_new_tokens,
+        ans_out = _safe_generate(
+            model, ans_idx, max_new_tokens,
             temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
-            stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs, return_meta=True
+            stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs, return_meta=True,
         )
         ans_tokens, meta_ans = ans_out
         answer = tokenizer.decode(ans_tokens[0, ans_idx.shape[1]:])
@@ -1171,15 +1191,15 @@ def reason_loop(
                 pass
         else:
             revision_prompt = f"{text_prompt}\nDraft answer: {final_answer}\nCritique: {critique}\nRevised answer:"
-            rev_out = model.generate(
-                tokenizer.encode(revision_prompt),
-                max_new_tokens=max_new_tokens,
+            rev_idx = tokenizer.encode(revision_prompt)
+            rev_out = _safe_generate(
+                model, rev_idx, max_new_tokens,
                 temperature=cfg.temperature, top_k=cfg.top_k, top_p=cfg.top_p,
-                stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs
+                stop_sequences=token_stop_seqs, stop_texts=text_stop_seqs,
             )
             if isinstance(rev_out, tuple):
                 rev_out = rev_out[0]
-            final_answer = tokenizer.decode(rev_out[0][:, tokenizer.encode(revision_prompt).shape[1]:])
+            final_answer = tokenizer.decode(rev_out[0, rev_idx.shape[1]:])
 
         mon.log("<revise>", final_answer)
 
@@ -1235,10 +1255,15 @@ def generate_with_think(
     **kwargs,
 ) -> Tuple[str, Dict[str, object]]:
     """Generate text while returning reasoning metadata."""
-    result = generate_text(
-        prompt, max_new_tokens=max_new_tokens, config=config,
-        log_reasoning=True, monitor=monitor, **kwargs
+    params = dict(
+        max_new_tokens=max_new_tokens,
+        config=config,
+        log_reasoning=True,
+        **kwargs,
     )
+    if monitor is not None:
+        params["monitor"] = monitor
+    result = generate_text(prompt, **params)
     assert isinstance(result, tuple)
     return result  # (text, meta)
 
