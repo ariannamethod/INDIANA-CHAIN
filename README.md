@@ -17,7 +17,7 @@ Inspired by Andrej Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT), th
 ## Usage
 
 ```bash
-python -m indiana_c.cli "2+2="
+python -m indiana_core "2+2="
 ```
 
 ## Reasoning Logger

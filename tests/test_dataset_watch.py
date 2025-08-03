@@ -2,7 +2,7 @@ import os
 import time
 from pathlib import Path
 
-from indiana_c.monitor import SelfMonitor
+from indiana_core import SelfMonitor
 
 
 def test_dataset_watch(tmp_path):
