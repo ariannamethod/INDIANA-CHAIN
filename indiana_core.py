@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
+from math_verify import parse as mv_parse, verify as mv_verify
+
 import torch
 import torch.nn as nn
 from tokenizers import Tokenizer
@@ -513,6 +515,19 @@ thought_logger = ThoughtComplexityLogger()
 # ---------------------------------------------------------------------------
 
 
+def accuracy_reward(draft: str, revised: str) -> float:
+    """Return 1 if ``revised`` matches ``draft`` mathematically using ``math_verify``."""
+
+    try:
+        gold = mv_parse(draft)
+        pred = mv_parse(revised)
+        if not gold or not pred:
+            return 0.0
+        return 1.0 if mv_verify(gold, pred) else 0.0
+    except Exception:
+        return 0.0
+
+
 def generate_text(
     prompt: str | None = None,
     max_new_tokens: int = 50,
@@ -544,13 +559,16 @@ def generate_text(
     text = tokenizer.decode(out[0])
     if self_reflect:
         critique = reflect(prompt, text, max_new_tokens=max_new_tokens, config=config)
-        if "good" not in critique.lower():
-            revision_prompt = (
-                f"{prompt}\nDraft answer: {text}\nCritique: {critique}\nRevised answer:"
-            )
-            idx = tokenizer.encode(revision_prompt)
+        revision_prompt = (
+            f"{prompt}\nDraft answer: {text}\nCritique: {critique}\nRevised answer:"
+        )
+        idx = tokenizer.encode(revision_prompt)
+        out = model.generate(idx, max_new_tokens=max_new_tokens)
+        revised = tokenizer.decode(out[0])
+        if accuracy_reward(text, revised) < 1.0:
             out = model.generate(idx, max_new_tokens=max_new_tokens)
-            text = tokenizer.decode(out[0])
+            revised = tokenizer.decode(out[0])
+        text = revised
     monitor.log(prompt, text)
     complexity, entropy = estimate_complexity_and_entropy(text)
     record = thought_logger.log_turn(text, complexity, entropy)
