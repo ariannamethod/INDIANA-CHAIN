@@ -1,5 +1,4 @@
-from indiana_c import IndianaC, IndianaCConfig
-from indiana_core import tokenizer
+from indiana_core import IndianaC, IndianaCConfig, tokenizer
 
 
 def test_forward():
