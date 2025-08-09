@@ -136,5 +136,3 @@ Acknowledgements
 Indiana Chain draws from the R1 engine and the nanoGPT project by Andrej Karpathy.
 
 ---
-
-Если нужно где-то упростить, добавить раздел или сделать по-другому — говори, подправлю сразу!
